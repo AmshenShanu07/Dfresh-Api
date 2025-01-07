@@ -15,15 +15,57 @@ datasource db {
 
 enum UserTypes {
   ADMIN
-  USER
+  CUSTOMER
+  OUTLET_AGENT
+  CENTRAL_STAFF
+  PURCHASE_STAFF
 }
 
 model User {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   name      String
   phone     String    @unique()
   password  String
-  userType  UserTypes @default(USER)
+  userType  UserTypes @default(CUSTOMER)
   email     String?   @default("")
+  createdAt DateTime  @default(now())
+
+  BulkPurchase BulkPurchase[]
+  Outlets Outlets[]
+}
+
+enum ProductUnits {
+  KG
+  G
+}
+
+model BulkPurchase {
+  id               String   @id @default(cuid())
+  staff            User     @relation(fields: [staffId], references: [id])
+  staffId          String
+  name             String
+  purchaseQuantity Int
+  purchaseUnit     ProductUnits
+  purchasePrice    Int
+  purchaseDate     DateTime @default(now())
+  status           String
+
+  weightAfterCleaningPerUnit Int? @default(0)
+
+  productUnit     String?  @default("")
+  productQuantity Int?     @default(0)
+  productPrice    Int?     @default(0)
+
+  createdAt DateTime @default(now())
+}
+
+model Outlets {
+  id        String   @id @default(cuid())
+  name      String?  @default("")
+  address   String?  @default("")
+  phone     String?  @default("") 
+  location  String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
   createdAt DateTime @default(now())
 }
