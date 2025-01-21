@@ -39,6 +39,16 @@ enum ProductUnits {
   G
 }
 
+model Products {
+  id          String   @id @default(cuid())
+  name        String
+  image       String[]
+  category    Category @relation(fields: [categoryId], references: [id])
+  categoryId  String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
 model BulkPurchase {
   id               String       @id @default(cuid())
   staff            User         @relation(fields: [staffId], references: [id])
@@ -76,4 +86,6 @@ model Category {
   name      String
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
+
+  Products Products[]
 }

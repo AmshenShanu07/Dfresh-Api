@@ -15,17 +15,17 @@ import { UpdateOutletDto } from './dto/update-outlet.dto';
 export class OutletController {
   constructor(private readonly outletService: OutletService) {}
 
-  @Post('/create')
+  @Post('create')
   create(@Body() createOutletDto: CreateOutletDto) {
     return this.outletService.create(createOutletDto);
   }
 
-  @Get('/all')
+  @Get('all')
   findAll() {
     return this.outletService.findAll();
   }
 
-  @Get('/single/:id')
+  @Get('detail/:id')
   findOne(@Param('id') id: string) {
     return this.outletService.findOne(id);
   }
