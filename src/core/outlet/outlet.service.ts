@@ -2,50 +2,82 @@ import { Injectable } from '@nestjs/common';
 import { CreateOutletDto } from './dto/create-outlet.dto';
 import { UpdateOutletDto } from './dto/update-outlet.dto';
 import { PrismaService } from 'src/services/prisma.service';
+import { UserTypes } from '@prisma/client';
 
 @Injectable()
 export class OutletService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  create(createOutletDto: CreateOutletDto) {
-    return this.prismaService.outlets.create({
+  async create(createOutletDto: CreateOutletDto) {
+    const user = await this.prismaService.user.findFirst({
+      where: { id: createOutletDto.userId },
+    });
+
+    // TODO: add proper error handling
+    if (!user) return 'User not found';
+
+    const outlet = await this.prismaService.outlets.create({
       data: {
         name: createOutletDto.name,
         address: createOutletDto.address,
         phone: createOutletDto.phone,
         location: createOutletDto.location,
-        userId: createOutletDto.userId,
       },
     });
+
+    await this.prismaService.staff.create({
+      data: {
+        outletId: outlet.id,
+        userId: user.id,
+      },
+    });
+
+    return this.findOne(outlet.id);
   }
 
   findAll() {
     return this.prismaService.outlets.findMany({
-      include: { user: true },
+      include: { OutletAgent: { include: { user: true } } },
     });
   }
 
   findOne(id: string) {
     return this.prismaService.outlets.findFirst({
       where: { id },
-      include: { user: true },
+      include: { OutletAgent: { include: { user: true } } },
     });
   }
 
-  update(id: string, updateOutletDto: UpdateOutletDto) {
-    return this.prismaService.outlets.update({
+  async update(id: string, updateOutletDto: UpdateOutletDto) {
+    const outlet = await this.prismaService.outlets.update({
       where: { id },
       data: {
         name: updateOutletDto.name,
         address: updateOutletDto.address,
         phone: updateOutletDto.phone,
         location: updateOutletDto.location,
-        userId: updateOutletDto.userId,
       },
     });
+
+    const outletAgent = await this.prismaService.staff.findFirst({
+      where: {
+        outletId: id,
+        user: { userType: UserTypes.OUTLET_AGENT },
+      },
+    });
+
+    if (outletAgent) {
+      await this.prismaService.staff.update({
+        where: { id: outletAgent.id },
+        data: { userId: updateOutletDto.userId },
+      });
+    }
+
+    return this.findOne(outlet.id);
   }
 
-  remove(id: string) {
+  async remove(id: string) {
+    await this.prismaService.staff.deleteMany({ where: { outletId: id } });
     return this.prismaService.outlets.delete({ where: { id } });
   }
 }

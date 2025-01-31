@@ -1,11 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsMongoId,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateOutletDto {
   @ApiProperty({
@@ -49,7 +43,6 @@ export class CreateOutletDto {
     description: 'The user id of the outlet',
     required: true,
   })
-  @IsMongoId()
   @IsNotEmpty()
   userId: string;
 

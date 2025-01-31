@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -29,9 +23,18 @@ model User {
   userType  UserTypes @default(CUSTOMER)
   email     String?   @default("")
   createdAt DateTime  @default(now())
+  address   String?   @default("")
 
-  BulkPurchase BulkPurchase[]
-  Outlets      Outlets[]
+  OutletAgent Staff[]
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  Products Products[]
 }
 
 enum ProductUnits {
@@ -40,32 +43,67 @@ enum ProductUnits {
 }
 
 model Products {
-  id          String   @id @default(cuid())
-  name        String
-  image       String[]
-  category    Category @relation(fields: [categoryId], references: [id])
-  categoryId  String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  name       String
+  image      String[]
+  category   Category @relation(fields: [categoryId], references: [id])
+  categoryId String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  Purchase Purchase[]
+
+  Outlets Outlets[]
+
+  Catalog Catalog[]
+
+  CatalogProducts CatalogProducts[]
 }
 
-model BulkPurchase {
-  id               String       @id @default(cuid())
-  staff            User         @relation(fields: [staffId], references: [id])
-  staffId          String
-  name             String
-  purchaseQuantity Int
-  purchaseUnit     ProductUnits
-  purchasePrice    Int
-  purchaseDate     DateTime     @default(now())
-  status           String
+model Purchase {
+  id        String   @id @default(cuid())
+  product   Products @relation(fields: [productId], references: [id])
+  productId String
+  outlet    Outlets  @relation(fields: [outletId], references: [id])
+  outletId  String
+  supplier  String
 
-  weightAfterCleaningPerUnit Int? @default(0)
+  quantity     Float
+  quantityUnit ProductUnits
 
-  productUnit     String? @default("")
-  productQuantity Int?    @default(0)
-  productPrice    Int?    @default(0)
+  totalPrice   Float
+  pricePerUnit Float
 
+  releasedQtny     Float?
+  releasedQntyUnit ProductUnits?
+
+  cleanedQnty     Float?
+  cleanedQntyUnit ProductUnits?
+
+  cleanedCount Float?
+
+  thresholdQnty     Float?
+  thresholdQntyUnit ProductUnits?
+  createdAt         DateTime      @default(now())
+}
+
+model Catalog {
+  id          String @id @default(cuid())
+  name        String
+  description String
+
+  createdAt DateTime @default(now())
+
+  CatalogProducts CatalogProducts[]
+  Products        Products[]
+}
+
+model CatalogProducts {
+  id        String   @id @default(cuid())
+  catalog   Catalog  @relation(fields: [catalogId], references: [id])
+  catalogId String
+  product   Products @relation(fields: [productId], references: [id])
+  productId String
   createdAt DateTime @default(now())
 }
 
@@ -76,16 +114,19 @@ model Outlets {
   phone          String?  @default("")
   location       String
   isSalesEnabled Boolean  @default(false)
-  user           User     @relation(fields: [userId], references: [id])
-  userId         String
   createdAt      DateTime @default(now())
+
+  products Products[]
+  Purchase Purchase[]
+
+  OutletAgent Staff[]
 }
 
-model Category {
-  id        String   @id @default(cuid())
-  name      String
-  isActive  Boolean  @default(true)
+model Staff {
+  id        String @id @default(cuid())
+  user      User   @relation(fields: [userId], references: [id])
+  userId    String
+  outlet    Outlets @relation(fields: [outletId], references: [id])
+  outletId  String
   createdAt DateTime @default(now())
-
-  Products Products[]
 }
