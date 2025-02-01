@@ -61,12 +61,14 @@ model Products {
 }
 
 model Purchase {
-  id        String   @id @default(cuid())
-  product   Products @relation(fields: [productId], references: [id])
-  productId String
-  outlet    Outlets  @relation(fields: [outletId], references: [id])
-  outletId  String
-  supplier  String
+  id          String   @id @default(cuid())
+  product     Products @relation(fields: [productId], references: [id])
+  productId   String
+  outlet      Outlets  @relation(fields: [outletId], references: [id])
+  outletId    String
+  supplier    Supplier @relation(fields: [supplierId], references: [id])
+  supplierId  String
+  batchNumber String
 
   quantity     Float
   quantityUnit ProductUnits
@@ -123,10 +125,22 @@ model Outlets {
 }
 
 model Staff {
-  id        String @id @default(cuid())
-  user      User   @relation(fields: [userId], references: [id])
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
   userId    String
-  outlet    Outlets @relation(fields: [outletId], references: [id])
+  outlet    Outlets  @relation(fields: [outletId], references: [id])
   outletId  String
   createdAt DateTime @default(now())
+}
+
+model Supplier {
+  id           String   @id @default(cuid())
+  name         String
+  supplierCode String
+  phone        String?  @default("")
+  email        String?  @default("")
+  address      String?  @default("")
+  createdAt    DateTime @default(now())
+
+  Purchase Purchase[]
 }
