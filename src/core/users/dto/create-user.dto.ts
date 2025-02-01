@@ -33,4 +33,9 @@ export class CreateUserDto {
   @IsNotEmpty()
   @IsEnum(UserTypes)
   userType: UserTypes;
+
+  @ApiProperty({ example: '', description: 'The address of the User' })
+  @IsString()
+  @IsOptional()
+  address?: string;
 }

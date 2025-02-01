@@ -3,19 +3,16 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
-import { PrismaService } from 'src/services/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login.dto';
-import { JwtService } from '@nestjs/jwt';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateStaffDto } from './dto/create-staff.dto';
+import { PrismaService } from 'src/services/prisma.service';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    private prismaService: PrismaService,
-    private jwtService: JwtService,
-  ) {}
+  constructor(private prismaService: PrismaService) {}
 
   async create(createUserDto: CreateUserDto) {
     const isExist = await this.prismaService.user.findFirst({
@@ -31,7 +28,15 @@ export class UsersService {
     const password = await bcrypt.hash(createUserDto.password, 10);
     createUserDto.password = password;
 
-    return this.prismaService.user.create({ data: createUserDto });
+    return this.prismaService.user.create({
+      data: {
+        name: createUserDto.name,
+        phone: createUserDto.phone,
+        password: createUserDto.password,
+        userType: createUserDto.userType,
+        address: createUserDto.address,
+      },
+    });
   }
 
   async login(data: LoginDto) {
@@ -65,6 +70,13 @@ export class UsersService {
       where: {
         id: id,
       },
+      include: {
+        OutletAgent: {
+          include: {
+            outlet: true,
+          },
+        },
+      },
     });
   }
 
@@ -83,5 +95,48 @@ export class UsersService {
         id: id,
       },
     });
+  }
+
+  async createStaff(data: CreateStaffDto) {
+    const outlet = this.prismaService.outlets.findFirst({
+      where: {
+        id: data.outletId,
+      },
+    });
+
+    if (!outlet) {
+      return new BadRequestException('Outlet not found');
+    }
+
+    const user: any = await this.create(data as CreateUserDto);
+
+    await this.prismaService.staff.create({
+      data: {
+        userId: user.id,
+        outletId: data.outletId,
+      },
+    });
+
+    return this.findOne(user.id);
+  }
+
+  async deleteStaff(id: string) {
+    const staff = await this.prismaService.staff.findFirst({
+      where: {
+        userId: id,
+      },
+    });
+
+    if (!staff) {
+      return new BadRequestException('Staff not found');
+    }
+
+    await this.prismaService.staff.deleteMany({
+      where: {
+        userId: id,
+      },
+    });
+
+    return this.remove(id);
   }
 }
