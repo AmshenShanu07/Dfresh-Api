@@ -24,7 +24,6 @@ model User {
   email     String?   @default("")
   createdAt DateTime  @default(now())
   address   String?   @default("")
-
   OutletAgent Staff[]
 }
 
@@ -32,6 +31,7 @@ model Category {
   id        String   @id @default(cuid())
   name      String
   isActive  Boolean  @default(true)
+  isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
 
   Products Products[]
@@ -49,6 +49,7 @@ model Products {
   category   Category @relation(fields: [categoryId], references: [id])
   categoryId String
   isActive   Boolean  @default(true)
+  isDeleted  Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   Purchase Purchase[]
@@ -90,6 +91,7 @@ model Catalog {
   name          String
   description   String
   isShared      Boolean  @default(false)
+  isDeleted     Boolean  @default(false)
   publishedDate DateTime?
 
   createdAt DateTime @default(now())
@@ -117,6 +119,7 @@ model Outlets {
   location       String
   isSalesEnabled Boolean  @default(false)
   createdAt      DateTime @default(now())
+  isDeleted      Boolean  @default(false)
 
   products Products[]
   Purchase Purchase[]
@@ -129,6 +132,7 @@ model Staff {
   userId    String
   outlet    Outlets  @relation(fields: [outletId], references: [id])
   outletId  String
+  isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
 }
 
@@ -140,6 +144,6 @@ model Supplier {
   email        String?  @default("")
   address      String?  @default("")
   createdAt    DateTime @default(now())
-
+  isDeleted    Boolean  @default(false)
   Purchase Purchase[]
 }

@@ -39,7 +39,12 @@ export class CategoryController {
   }
 
   @Delete('delete/:id')
-  remove(@Param('id') id: string) {
-    return this.categoryService.remove(id);
+  softDelete(@Param('id') id: string) {
+    return this.categoryService.softDelete(id);
+  }
+
+  @Delete('hard-delete/:id')
+  hardDelete(@Param('id') id: string) {
+    return this.categoryService.hardDelete(id);
   }
 }

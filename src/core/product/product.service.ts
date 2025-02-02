@@ -14,7 +14,9 @@ export class ProductService {
   }
 
   findAll() {
-    return this.prismaService.products.findMany({ where: { isActive: true } });
+    return this.prismaService.products.findMany({
+      where: { isActive: true, isDeleted: false },
+    });
   }
 
   findOne(id: string) {
@@ -28,7 +30,14 @@ export class ProductService {
     });
   }
 
-  remove(id: string) {
+  softDelete(id: string) {
+    return this.prismaService.products.update({
+      where: { id },
+      data: { isDeleted: false },
+    });
+  }
+
+  hardDelete(id: string) {
     return this.prismaService.products.delete({ where: { id } });
   }
 }

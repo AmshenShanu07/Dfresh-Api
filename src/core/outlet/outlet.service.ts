@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateOutletDto } from './dto/create-outlet.dto';
 import { UpdateOutletDto } from './dto/update-outlet.dto';
 import { PrismaService } from 'src/services/prisma.service';
@@ -13,8 +13,7 @@ export class OutletService {
       where: { id: createOutletDto.userId },
     });
 
-    // TODO: add proper error handling
-    if (!user) return 'User not found';
+    if (!user) return new BadRequestException('User not found');
 
     const outlet = await this.prismaService.outlets.create({
       data: {
@@ -37,6 +36,7 @@ export class OutletService {
 
   findAll() {
     return this.prismaService.outlets.findMany({
+      where: { isDeleted: false },
       include: { OutletAgent: { include: { user: true } } },
     });
   }
@@ -76,7 +76,18 @@ export class OutletService {
     return this.findOne(outlet.id);
   }
 
-  async remove(id: string) {
+  async softDelete(id: string) {
+    await this.prismaService.staff.updateMany({
+      where: { outletId: id },
+      data: { isDeleted: true },
+    });
+    return this.prismaService.outlets.update({
+      where: { id },
+      data: { isDeleted: true },
+    });
+  }
+
+  async hardDelete(id: string) {
     await this.prismaService.staff.deleteMany({ where: { outletId: id } });
     return this.prismaService.outlets.delete({ where: { id } });
   }

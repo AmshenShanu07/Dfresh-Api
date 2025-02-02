@@ -30,6 +30,7 @@ export class CatlogService {
 
   findAll() {
     return this.prismaService.catalog.findMany({
+      where: { isDeleted: false },
       include: { CatalogProducts: { include: { product: true } } },
     });
   }
@@ -94,7 +95,14 @@ export class CatlogService {
     return this.findOne(catalog.id);
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} catlog`;
+  softDelete(id: string) {
+    return this.prismaService.catalog.update({
+      where: { id },
+      data: { isDeleted: true },
+    });
+  }
+
+  hardDelete(id: string) {
+    return this.prismaService.catalog.delete({ where: { id } });
   }
 }

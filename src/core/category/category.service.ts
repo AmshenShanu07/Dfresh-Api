@@ -15,7 +15,7 @@ export class CategoryService {
 
   findAll() {
     return this.prismaService.category.findMany({
-      where: { isActive: true },
+      where: { isActive: true, isDeleted: false },
     });
   }
 
@@ -30,7 +30,14 @@ export class CategoryService {
     });
   }
 
-  remove(id: string) {
+  softDelete(id: string) {
+    return this.prismaService.category.update({
+      where: { id: id },
+      data: { isDeleted: true },
+    });
+  }
+
+  hardDelete(id: string) {
     return this.prismaService.category.delete({ where: { id: id } });
   }
 }

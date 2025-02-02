@@ -36,7 +36,12 @@ export class ProductController {
   }
 
   @Delete('delete/:id')
-  remove(@Param('id') id: string) {
-    return this.productService.remove(id);
+  softDelete(@Param('id') id: string) {
+    return this.productService.softDelete(id);
+  }
+
+  @Delete('hard-delete/:id')
+  hardDelete(@Param('id') id: string) {
+    return this.productService.hardDelete(id);
   }
 }

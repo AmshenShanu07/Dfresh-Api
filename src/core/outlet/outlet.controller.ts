@@ -36,7 +36,12 @@ export class OutletController {
   }
 
   @Delete('/delete/:id')
-  remove(@Param('id') id: string) {
-    return this.outletService.remove(id);
+  softDelete(@Param('id') id: string) {
+    return this.outletService.softDelete(id);
+  }
+
+  @Delete('/hard-delete/:id')
+  hardDelete(@Param('id') id: string) {
+    return this.outletService.softDelete(id);
   }
 }

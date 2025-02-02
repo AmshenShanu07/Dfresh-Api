@@ -36,7 +36,12 @@ export class CatlogController {
   }
 
   @Delete('delete/:id')
-  remove(@Param('id') id: string) {
-    return this.catlogService.remove(+id);
+  softDelete(@Param('id') id: string) {
+    return this.catlogService.softDelete(id);
+  }
+
+  @Delete('hard-delete/:id')
+  hardDelete(@Param('id') id: string) {
+    return this.catlogService.softDelete(id);
   }
 }
