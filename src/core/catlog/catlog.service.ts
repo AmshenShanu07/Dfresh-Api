@@ -1,0 +1,100 @@
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { CreateCatlogDto } from './dto/create-catlog.dto';
+import { ShareCatlogDto } from './dto/share-catlog.dto';
+import { PrismaService } from 'src/services/prisma.service';
+
+@Injectable()
+export class CatlogService {
+  constructor(private readonly prismaService: PrismaService) {}
+
+  async create(createCatlogDto: CreateCatlogDto) {
+    const catalog = await this.prismaService.catalog.create({
+      data: {
+        name: createCatlogDto.name,
+        description: createCatlogDto.description,
+      },
+    });
+    await Promise.all(
+      createCatlogDto.productIds.map((productId) => {
+        return this.prismaService.catalogProducts.create({
+          data: {
+            catalogId: catalog.id,
+            productId,
+          },
+        });
+      }),
+    );
+
+    return this.findOne(catalog.id);
+  }
+
+  findAll() {
+    return this.prismaService.catalog.findMany({
+      include: { CatalogProducts: { include: { product: true } } },
+    });
+  }
+
+  findOne(id: string) {
+    return this.prismaService.catalog.findFirst({
+      where: { id },
+      include: { CatalogProducts: { include: { product: true } } },
+    });
+  }
+
+  async removeProduct(id: string, productId: string) {
+    const catalog = await this.prismaService.catalog.findFirst({
+      where: { id },
+    });
+
+    if (!catalog) {
+      return new BadRequestException('Catalog not found');
+    }
+
+    await this.prismaService.catalogProducts.deleteMany({
+      where: {
+        catalogId: catalog.id,
+        productId,
+      },
+    });
+
+    return this.findOne(catalog.id);
+  }
+
+  async shareCatlog(shareCatlogDto: ShareCatlogDto) {
+    const catalog = await this.prismaService.catalog.findFirst({
+      where: { id: shareCatlogDto.catlogId },
+    });
+
+    if (!catalog) {
+      return new BadRequestException('Catalog not found');
+    }
+
+    await Promise.all(
+      shareCatlogDto.products.map((product) => {
+        return this.prismaService.catalogProducts.create({
+          data: {
+            catalogId: catalog.id,
+            productId: product.productId,
+            qnty: product.qnty,
+            qntyUnit: product.qntyUnit,
+            price: product.price,
+          },
+        });
+      }),
+    );
+
+    await this.prismaService.catalog.update({
+      where: { id: catalog.id },
+      data: {
+        publishedDate: new Date(shareCatlogDto.publishDate),
+        isShared: true,
+      },
+    });
+
+    return this.findOne(catalog.id);
+  }
+
+  remove(id: number) {
+    return `This action removes a #${id} catlog`;
+  }
+}

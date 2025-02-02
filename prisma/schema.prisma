@@ -52,11 +52,7 @@ model Products {
   createdAt  DateTime @default(now())
 
   Purchase Purchase[]
-
   Outlets Outlets[]
-
-  Catalog Catalog[]
-
   CatalogProducts CatalogProducts[]
 }
 
@@ -90,14 +86,15 @@ model Purchase {
 }
 
 model Catalog {
-  id          String @id @default(cuid())
-  name        String
-  description String
+  id            String   @id @default(cuid())
+  name          String
+  description   String
+  isShared      Boolean  @default(false)
+  publishedDate DateTime?
 
   createdAt DateTime @default(now())
 
   CatalogProducts CatalogProducts[]
-  Products        Products[]
 }
 
 model CatalogProducts {
@@ -106,6 +103,9 @@ model CatalogProducts {
   catalogId String
   product   Products @relation(fields: [productId], references: [id])
   productId String
+  qnty      Float?
+  qntyUnit  ProductUnits?
+  price     Float?
   createdAt DateTime @default(now())
 }
 
@@ -120,7 +120,6 @@ model Outlets {
 
   products Products[]
   Purchase Purchase[]
-
   OutletAgent Staff[]
 }
 
