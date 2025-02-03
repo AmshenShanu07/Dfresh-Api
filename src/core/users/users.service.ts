@@ -9,6 +9,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { PrismaService } from 'src/services/prisma.service';
+import { UserTypeDto } from './dto/user-type.dto';
 
 @Injectable()
 export class UsersService {
@@ -76,6 +77,14 @@ export class UsersService {
             outlet: true,
           },
         },
+      },
+    });
+  }
+
+  findByUserType(userType: UserTypeDto) {
+    return this.prismaService.user.findMany({
+      where: {
+        userType: userType.userType,
       },
     });
   }

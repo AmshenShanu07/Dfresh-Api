@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateCatlogDto } from './dto/create-catlog.dto';
 import { ShareCatlogDto } from './dto/share-catlog.dto';
 import { PrismaService } from 'src/services/prisma.service';
+import { RemoveCatlogProductDto } from '../category/dto/remove-product.dto';
 
 @Injectable()
 export class CatlogService {
@@ -42,9 +43,9 @@ export class CatlogService {
     });
   }
 
-  async removeProduct(id: string, productId: string) {
+  async removeProduct(data: RemoveCatlogProductDto) {
     const catalog = await this.prismaService.catalog.findFirst({
-      where: { id },
+      where: { id: data.catlogId },
     });
 
     if (!catalog) {
@@ -54,7 +55,7 @@ export class CatlogService {
     await this.prismaService.catalogProducts.deleteMany({
       where: {
         catalogId: catalog.id,
-        productId,
+        productId: data.productId,
       },
     });
 

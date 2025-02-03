@@ -16,14 +16,14 @@ enum UserTypes {
 }
 
 model User {
-  id        String    @id @default(cuid())
-  name      String
-  phone     String    @unique()
-  password  String
-  userType  UserTypes @default(CUSTOMER)
-  email     String?   @default("")
-  createdAt DateTime  @default(now())
-  address   String?   @default("")
+  id          String    @id @default(cuid())
+  name        String
+  phone       String    @unique()
+  password    String
+  userType    UserTypes @default(CUSTOMER)
+  email       String?   @default("")
+  createdAt   DateTime  @default(now())
+  address     String?   @default("")
   OutletAgent Staff[]
 }
 

@@ -6,10 +6,12 @@ import {
   Put,
   Param,
   Delete,
+  Query,
 } from '@nestjs/common';
 import { CatlogService } from './catlog.service';
 import { CreateCatlogDto } from './dto/create-catlog.dto';
 import { ShareCatlogDto } from './dto/share-catlog.dto';
+import { RemoveCatlogProductDto } from '../category/dto/remove-product.dto';
 
 @Controller('catlog')
 export class CatlogController {
@@ -33,6 +35,11 @@ export class CatlogController {
   @Put('share/:id')
   shareCatlog(@Body() shareCatlogDto: ShareCatlogDto) {
     return this.catlogService.shareCatlog(shareCatlogDto);
+  }
+
+  @Delete('remove-product')
+  removeProduct(@Query() data: RemoveCatlogProductDto) {
+    return this.catlogService.removeProduct(data);
   }
 
   @Delete('delete/:id')

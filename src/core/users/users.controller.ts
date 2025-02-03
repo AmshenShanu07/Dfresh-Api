@@ -3,9 +3,10 @@ import {
   Get,
   Post,
   Body,
-  Patch,
   Param,
   Delete,
+  Put,
+  Query,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -13,6 +14,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { LoginDto } from './dto/login.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
+import { UserTypeDto } from './dto/user-type.dto';
 
 @ApiTags('Manage Users')
 @Controller('users')
@@ -29,9 +31,19 @@ export class UsersController {
     return this.usersService.login(data);
   }
 
+  @Post('create-staff')
+  createStaff(@Body() createStaffDto: CreateStaffDto) {
+    return this.usersService.createStaff(createStaffDto);
+  }
+
   @Get('all')
   findAll() {
     return this.usersService.findAll();
+  }
+
+  @Get('user-type')
+  findUserType(@Query() query: UserTypeDto) {
+    return this.usersService.findByUserType(query);
   }
 
   @Get('detail/:id')
@@ -39,7 +51,7 @@ export class UsersController {
     return this.usersService.findOne(id);
   }
 
-  @Patch('update/:id')
+  @Put('update/:id')
   update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
     return this.usersService.update(id, updateUserDto);
   }
@@ -47,11 +59,6 @@ export class UsersController {
   @Delete('delete/:id')
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);
-  }
-
-  @Post('create-staff')
-  createStaff(@Body() createStaffDto: CreateStaffDto) {
-    return this.usersService.createStaff(createStaffDto);
   }
 
   @Delete('delete-staff/:id')
