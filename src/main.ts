@@ -6,6 +6,7 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import { ConfigService } from '@nestjs/config';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -13,14 +14,19 @@ async function bootstrap() {
     new FastifyAdapter(),
   );
 
+  const configService = app.get(ConfigService);
+
   const options = new DocumentBuilder()
     .setTitle('DFresh Api')
     .setDescription('DFresh Api Documentation')
     .setVersion('1.0')
-    .addBearerAuth()
-    .build();
+    .addBearerAuth();
 
-  const document = SwaggerModule.createDocument(app, options);
+  if (configService.get('ENV') === 'PROD') {
+    options.addServer('/api');
+  }
+
+  const document = SwaggerModule.createDocument(app, options.build());
   SwaggerModule.setup(`doc`, app, document);
 
   app.useGlobalPipes(new ValidationPipe());

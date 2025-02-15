@@ -11,7 +11,7 @@ export class FilterCommonDto {
 
   @IsNotEmpty()
   @IsNumber()
-  sortOrder: string;
+  sortOrder: number;
 
   @IsOptional()
   @IsString()

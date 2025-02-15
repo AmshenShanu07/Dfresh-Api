@@ -3,6 +3,7 @@ import { CreateOutletDto } from './dto/create-outlet.dto';
 import { UpdateOutletDto } from './dto/update-outlet.dto';
 import { PrismaService } from 'src/services/prisma.service';
 import { UserTypes } from '@prisma/client';
+import { OutletFilterDto } from './dto/filter-list.dto';
 
 @Injectable()
 export class OutletService {
@@ -45,6 +46,26 @@ export class OutletService {
     return this.prismaService.outlets.findFirst({
       where: { id },
       include: { OutletAgent: { include: { user: true } } },
+    });
+  }
+
+  filterList(filter: OutletFilterDto) {
+    let takeCount = parseInt(filter.count + '');
+    let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
+
+    if (takeCount < 0 || skipCount < 0) {
+      takeCount = undefined;
+      skipCount = undefined;
+    }
+
+    return this.prismaService.outlets.findMany({
+      where: { isDeleted: false },
+      include: { OutletAgent: { include: { user: true } } },
+      orderBy: {
+        [filter.sortBy]: filter.sortOrder === -1 ? 'asc' : 'desc',
+      },
+      take: takeCount,
+      skip: skipCount,
     });
   }
 

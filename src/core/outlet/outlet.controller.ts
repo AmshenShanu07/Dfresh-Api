@@ -3,7 +3,7 @@ import {
   Get,
   Post,
   Body,
-  Patch,
+  Put,
   Param,
   Delete,
 } from '@nestjs/common';
@@ -30,7 +30,7 @@ export class OutletController {
     return this.outletService.findOne(id);
   }
 
-  @Patch('/update/:id')
+  @Put('/update/:id')
   update(@Param('id') id: string, @Body() updateOutletDto: UpdateOutletDto) {
     return this.outletService.update(id, updateOutletDto);
   }
