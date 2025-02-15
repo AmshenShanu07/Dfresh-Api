@@ -6,9 +6,14 @@ import { ProductModule } from './core/product/product.module';
 import { PurchaseModule } from './core/purchase/purchase.module';
 import { SupplierModule } from './core/supplier/supplier.module';
 import { CatlogModule } from './core/catlog/catlog.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: './.env',
+    }),
     UsersModule,
     OutletModule,
     CategoryModule,
