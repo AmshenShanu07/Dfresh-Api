@@ -22,6 +22,7 @@ export class OutletService {
         address: createOutletDto.address,
         phone: createOutletDto.phone,
         location: createOutletDto.location,
+        commission: createOutletDto.commission,
       },
     });
 
@@ -77,6 +78,8 @@ export class OutletService {
         address: updateOutletDto.address,
         phone: updateOutletDto.phone,
         location: updateOutletDto.location,
+        commission: updateOutletDto.commission,
+        isActive: updateOutletDto.isActive,
       },
     });
 

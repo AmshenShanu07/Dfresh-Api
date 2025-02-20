@@ -16,11 +16,29 @@ export class CategoryService {
   findAll() {
     return this.prismaService.category.findMany({
       where: { isActive: true, isDeleted: false },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        isDeleted: true,
+        createdAt: true,
+        _count: { select: { Products: true } },
+      },
     });
   }
 
   findOne(id: string) {
-    return this.prismaService.category.findFirst({ where: { id: id } });
+    return this.prismaService.category.findFirst({
+      where: { id: id },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        isDeleted: true,
+        createdAt: true,
+        _count: { select: { Products: true } },
+      },
+    });
   }
 
   update(id: string, updateCategoryDto: UpdateCategoryDto) {
