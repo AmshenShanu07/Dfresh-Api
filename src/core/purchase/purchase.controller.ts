@@ -6,11 +6,13 @@ import {
   Param,
   Delete,
   Put,
+  Query,
 } from '@nestjs/common';
 import { PurchaseService } from './purchase.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { CleaningDetailsDto } from './dto/cleaning-details.dto';
 import { ThresholdLevelDto } from './dto/thereshold-level.dto';
+import { FilterCommonDto } from 'src/common/dto/filter.dto';
 
 @Controller('purchase')
 export class PurchaseController {
@@ -24,6 +26,11 @@ export class PurchaseController {
   @Get('all')
   findAll() {
     return this.purchaseService.findAll();
+  }
+
+  @Get('/list')
+  getList(@Query() filter: FilterCommonDto) {
+    return this.purchaseService.getList(filter);
   }
 
   @Get('detail/:id')

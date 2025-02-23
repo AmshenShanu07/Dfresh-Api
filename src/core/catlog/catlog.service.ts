@@ -3,6 +3,7 @@ import { CreateCatlogDto } from './dto/create-catlog.dto';
 import { ShareCatlogDto } from './dto/share-catlog.dto';
 import { PrismaService } from 'src/services/prisma.service';
 import { RemoveCatlogProductDto } from '../category/dto/remove-product.dto';
+import { FilterCommonDto } from 'src/common/dto/filter.dto';
 
 @Injectable()
 export class CatlogService {
@@ -40,6 +41,23 @@ export class CatlogService {
     return this.prismaService.catalog.findFirst({
       where: { id },
       include: { CatalogProducts: { include: { product: true } } },
+    });
+  }
+
+  getList(filter: FilterCommonDto) {
+    let takeCount = parseInt(filter.count + '');
+    let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
+
+    if (takeCount < 0 || skipCount < 0) {
+      takeCount = undefined;
+      skipCount = undefined;
+    }
+    return this.prismaService.catalog.findMany({
+      orderBy: {
+        createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
+      },
+      take: takeCount,
+      skip: skipCount,
     });
   }
 

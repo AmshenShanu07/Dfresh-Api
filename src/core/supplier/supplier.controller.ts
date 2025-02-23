@@ -6,10 +6,12 @@ import {
   Param,
   Delete,
   Put,
+  Query,
 } from '@nestjs/common';
 import { SupplierService } from './supplier.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
+import { FilterCommonDto } from 'src/common/dto/filter.dto';
 
 @Controller('supplier')
 export class SupplierController {
@@ -23,6 +25,11 @@ export class SupplierController {
   @Get('all')
   findAll() {
     return this.supplierService.findAll();
+  }
+
+  @Get('/list')
+  getList(@Query() filter: FilterCommonDto) {
+    return this.supplierService.getList(filter);
   }
 
   @Get('detail/:id')

@@ -12,6 +12,7 @@ import { CatlogService } from './catlog.service';
 import { CreateCatlogDto } from './dto/create-catlog.dto';
 import { ShareCatlogDto } from './dto/share-catlog.dto';
 import { RemoveCatlogProductDto } from '../category/dto/remove-product.dto';
+import { FilterCommonDto } from 'src/common/dto/filter.dto';
 
 @Controller('catlog')
 export class CatlogController {
@@ -25,6 +26,11 @@ export class CatlogController {
   @Get('all')
   findAll() {
     return this.catlogService.findAll();
+  }
+
+  @Get('/list')
+  getList(@Query() filter: FilterCommonDto) {
+    return this.catlogService.getList(filter);
   }
 
   @Get('detail/:id')

@@ -6,10 +6,12 @@ import {
   Put,
   Param,
   Delete,
+  Query,
 } from '@nestjs/common';
 import { OutletService } from './outlet.service';
 import { CreateOutletDto } from './dto/create-outlet.dto';
 import { UpdateOutletDto } from './dto/update-outlet.dto';
+import { OutletFilterDto } from './dto/filter-list.dto';
 
 @Controller('outlet')
 export class OutletController {
@@ -23,6 +25,11 @@ export class OutletController {
   @Get('all')
   findAll() {
     return this.outletService.findAll();
+  }
+
+  @Get('/list')
+  getList(@Query() filter: OutletFilterDto) {
+    return this.outletService.filterList(filter);
   }
 
   @Get('detail/:id')

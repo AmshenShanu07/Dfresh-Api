@@ -3,6 +3,7 @@ import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { PrismaService } from 'src/services/prisma.service';
 import { CleaningDetailsDto } from './dto/cleaning-details.dto';
 import { ThresholdLevelDto } from './dto/thereshold-level.dto';
+import { FilterCommonDto } from 'src/common/dto/filter.dto';
 
 @Injectable()
 export class PurchaseService {
@@ -75,6 +76,23 @@ export class PurchaseService {
 
   findAll() {
     return this.prismaService.purchase.findMany();
+  }
+
+  getList(filter: FilterCommonDto) {
+    let takeCount = parseInt(filter.count + '');
+    let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
+
+    if (takeCount < 0 || skipCount < 0) {
+      takeCount = undefined;
+      skipCount = undefined;
+    }
+    return this.prismaService.supplier.findMany({
+      orderBy: {
+        createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
+      },
+      take: takeCount,
+      skip: skipCount,
+    });
   }
 
   findOne(id: string) {

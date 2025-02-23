@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { PrismaService } from 'src/services/prisma.service';
+import { FilterCommonDto } from 'src/common/dto/filter.dto';
 
 @Injectable()
 export class CategoryService {
@@ -38,6 +39,23 @@ export class CategoryService {
         createdAt: true,
         _count: { select: { Products: true } },
       },
+    });
+  }
+
+  getList(filter: FilterCommonDto) {
+    let takeCount = parseInt(filter.count + '');
+    let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
+
+    if (takeCount < 0 || skipCount < 0) {
+      takeCount = undefined;
+      skipCount = undefined;
+    }
+    return this.prismaService.category.findMany({
+      orderBy: {
+        createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
+      },
+      take: takeCount,
+      skip: skipCount,
     });
   }
 
