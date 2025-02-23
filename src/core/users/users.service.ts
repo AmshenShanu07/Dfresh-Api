@@ -10,10 +10,14 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { PrismaService } from 'src/services/prisma.service';
 import { UserTypeDto } from './dto/user-type.dto';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class UsersService {
-  constructor(private prismaService: PrismaService) {}
+  constructor(
+    private prismaService: PrismaService,
+    private jwtService: JwtService,
+  ) {}
 
   async create(createUserDto: CreateUserDto) {
     const isExist = await this.prismaService.user.findFirst({
@@ -47,19 +51,28 @@ export class UsersService {
       },
     });
 
-    console.log(isExist, data);
-
     if (isExist === null) {
       return new UnauthorizedException('User not found');
     }
 
     const comparePswd = await bcrypt.compare(data.password, isExist.password);
 
+    const token = await this.jwtService.sign(
+      {
+        id: isExist.id,
+        phone: isExist.phone,
+      },
+      { secret: 'dfresh' },
+    );
+
     if (!comparePswd) {
       return new UnauthorizedException('Password not match');
     }
 
-    return isExist;
+    const user = { ...isExist };
+    delete user.password;
+
+    return { user, token };
   }
 
   findAll() {
