@@ -15,9 +15,7 @@ export class ProductService {
   }
 
   findAll() {
-    return this.prismaService.products.findMany({
-      where: { isActive: true, isDeleted: false },
-    });
+    return this.prismaService.products.findMany({});
   }
 
   findOne(id: string) {
@@ -33,6 +31,7 @@ export class ProductService {
       skipCount = undefined;
     }
     return this.prismaService.products.findMany({
+      where: { isDeleted: false },
       orderBy: {
         createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
       },
