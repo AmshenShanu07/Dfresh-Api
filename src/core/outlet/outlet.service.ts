@@ -79,6 +79,7 @@ export class OutletService {
         phone: updateOutletDto.phone,
         location: updateOutletDto.location,
         commission: updateOutletDto.commission,
+        isSalesEnabled: updateOutletDto.isSalesEnabled,
         isActive: updateOutletDto.isActive,
       },
     });
