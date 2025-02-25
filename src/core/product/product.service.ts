@@ -50,7 +50,7 @@ export class ProductService {
   softDelete(id: string) {
     return this.prismaService.products.update({
       where: { id },
-      data: { isDeleted: false },
+      data: { isDeleted: true },
     });
   }
 
