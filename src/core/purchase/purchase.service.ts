@@ -16,7 +16,7 @@ export class PurchaseService {
       this.prismaService.outlets.findFirst({
         where: { id: createPurchaseDto.outletId },
       }),
-      this.prismaService.supplier.findFirst({
+      this.prismaService.user.findFirst({
         where: { id: createPurchaseDto.supplierId },
       }),
     ]);

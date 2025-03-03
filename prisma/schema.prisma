@@ -25,6 +25,8 @@ model User {
   createdAt   DateTime  @default(now())
   address     String?   @default("")
   OutletAgent Staff[]
+
+  Purchase Purchase[]
 }
 
 model Category {
@@ -63,7 +65,7 @@ model Purchase {
   productId   String
   outlet      Outlets  @relation(fields: [outletId], references: [id])
   outletId    String
-  supplier    Supplier @relation(fields: [supplierId], references: [id])
+  supplier    User @relation(fields: [supplierId], references: [id])
   supplierId  String
   batchNumber String
 
@@ -149,5 +151,4 @@ model Supplier {
   address      String?  @default("")
   createdAt    DateTime @default(now())
   isDeleted    Boolean  @default(false)
-  Purchase Purchase[]
 }
