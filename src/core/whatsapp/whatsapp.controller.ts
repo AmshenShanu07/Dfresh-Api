@@ -17,9 +17,8 @@ export class WhatsappController {
   constructor(private readonly whatsappService: WhatsappService) {}
 
   @Post()
-  create(@Body() body: any, @Query() query: any) {
-    console.log(body);
-    return { body, query };
+  receiveMessage(@Body() body: any) {
+    return this.whatsappService.receiveMessage(body);
   }
 
   @Get()
