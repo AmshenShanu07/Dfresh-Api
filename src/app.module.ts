@@ -7,6 +7,7 @@ import { PurchaseModule } from './core/purchase/purchase.module';
 import { SupplierModule } from './core/supplier/supplier.module';
 import { CatlogModule } from './core/catlog/catlog.module';
 import { ConfigModule } from '@nestjs/config';
+import { WhatsappModule } from './core/whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ConfigModule } from '@nestjs/config';
     PurchaseModule,
     SupplierModule,
     CatlogModule,
+    WhatsappModule,
   ],
 })
 export class AppModule {}
