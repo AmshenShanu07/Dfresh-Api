@@ -73,6 +73,7 @@ import { ReceiveMessageDto } from './dto/receive-message.dto';
 //     },
 //   ],
 // };
+
 @Injectable()
 export class WhatsappService {
   private readonly botToken: string;
@@ -90,11 +91,19 @@ export class WhatsappService {
   async receiveMessage(data: ReceiveMessageDto) {
     await this.sendLog(JSON.stringify(data));
 
-    if (
-      !data.entry[0]?.changes[0]?.value.messages[0]?.type ||
-      data.entry[0]?.changes[0]?.value.messages[0]?.type !== 'text'
-    ) {
-      console.log('ping');
+    const type: string = data.entry[0]?.changes[0]?.value.messages[0]?.type;
+
+    if (!type) return 'This action only accepts text messages';
+
+    if (type == 'interactive') {
+      const btnId =
+        data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
+
+      if (btnId === 'get-catlog') {
+        const phone = data.entry[0].changes[0].value.messages[0].from;
+        return this.sendProduct(phone);
+      }
+
       return 'This action only accepts text messages';
     }
 
@@ -113,16 +122,80 @@ export class WhatsappService {
 
   async sendWelcomeMessage(name: string, phone: string) {
     const url = `https://graph.facebook.com/v22.0/${this.waPhoneNumberId}/messages`;
-    const message = `Hello ${name}, welcome to our store! How can I help you today?`;
     console.log(this.waUserToken, this.waPhoneNumberId, phone, name);
 
     const payload = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: phone,
-      type: 'text',
-      text: {
-        body: message,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        header: {
+          type: 'image',
+          image: {
+            id: '1140150290765079',
+          },
+        },
+        body: {
+          text: `Hi ${name}!\n Welcome to your creative studio, please check out our products.\n\n Thank you!`,
+        },
+        footer: {
+          text: 'Amshen Yesudas: Your gateway to creativity!™',
+        },
+        action: {
+          buttons: [
+            {
+              type: 'reply',
+              reply: {
+                id: 'get-catlog',
+                title: 'See Products',
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    try {
+      const response = await axios.post(url, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.waUserToken}`,
+        },
+      });
+
+      console.log('Message sent:', response.data);
+    } catch (error) {
+      console.error(
+        'Error sending message:',
+        error.response?.data || error.message,
+      );
+    }
+  }
+
+  async sendProduct(phone: string) {
+    const url = `https://graph.facebook.com/v22.0/${this.waPhoneNumberId}/messages`;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'catalog_message',
+        body: {
+          text: 'Hello! Thanks for your interest. Ordering is easy. Just visit our catalog and add items to purchase.',
+        },
+        action: {
+          name: 'catalog_message',
+          parameters: {
+            thumbnail_product_retailer_id: 'e6a9dwzudz',
+          },
+        },
+        footer: {
+          text: 'Best grocery deals on WhatsApp!',
+        },
       },
     };
 
