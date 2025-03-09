@@ -36,6 +36,43 @@ import { ReceiveMessageDto } from './dto/receive-message.dto';
 //   ],
 // };
 
+// const data = {
+//   object: 'whatsapp_business_account',
+//   entry: [
+//     {
+//       id: '1139607347569214',
+//       changes: [
+//         {
+//           value: {
+//             messaging_product: 'whatsapp',
+//             metadata: {
+//               display_phone_number: '916235982661',
+//               phone_number_id: '502595802947534',
+//             },
+//             contacts: [{ profile: { name: 'sh4nu' }, wa_id: '917012670512' }],
+//             messages: [
+//               {
+//                 context: {
+//                   from: '916235982661',
+//                   id: 'wamid.HBgMOTE3MDEyNjcwNTEyFQIAERgSRkMzN0ZBQTRDREJCMTU4QUZDAA==',
+//                 },
+//                 from: '917012670512',
+//                 id: 'wamid.HBgMOTE3MDEyNjcwNTEyFQIAEhgUM0E1MUYyRTg0RUEyQjNCNzQ1NDcA',
+//                 timestamp: '1741524954',
+//                 type: 'interactive',
+//                 interactive: {
+//                   type: 'button_reply',
+//                   button_reply: { id: 'hello-button', title: 'Hello' },
+//                 },
+//               },
+//             ],
+//           },
+//           field: 'messages',
+//         },
+//       ],
+//     },
+//   ],
+// };
 @Injectable()
 export class WhatsappService {
   private readonly botToken: string;
@@ -51,7 +88,11 @@ export class WhatsappService {
   }
 
   async receiveMessage(data: ReceiveMessageDto) {
-    await this.sendLog(JSON.stringify(data));
+    if (data.entry[0].changes[0].value.messages[0].type !== 'text') {
+      console.log('ping');
+      await this.sendLog(JSON.stringify(data));
+      return 'This action only accepts text messages';
+    }
 
     const message = data.entry[0].changes[0].value.messages[0].text.body;
     const name = data.entry[0].changes[0].value.contacts[0].profile.name;
