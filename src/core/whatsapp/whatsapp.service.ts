@@ -88,9 +88,13 @@ export class WhatsappService {
   }
 
   async receiveMessage(data: ReceiveMessageDto) {
-    if (data.entry[0].changes[0].value.messages[0].type !== 'text') {
+    await this.sendLog(JSON.stringify(data));
+
+    if (
+      !data.entry[0]?.changes[0]?.value.messages[0]?.type ||
+      data.entry[0]?.changes[0]?.value.messages[0]?.type !== 'text'
+    ) {
       console.log('ping');
-      await this.sendLog(JSON.stringify(data));
       return 'This action only accepts text messages';
     }
 
