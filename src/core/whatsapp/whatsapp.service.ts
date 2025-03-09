@@ -51,13 +51,14 @@ export class WhatsappService {
   }
 
   async receiveMessage(data: ReceiveMessageDto) {
+    await this.sendLog(JSON.stringify(data));
+
     const message = data.entry[0].changes[0].value.messages[0].text.body;
     const name = data.entry[0].changes[0].value.contacts[0].profile.name;
     const phone = data.entry[0].changes[0].value.messages[0].from;
 
     if (message === '/start') await this.sendWelcomeMessage(name, phone);
 
-    await this.sendLog(JSON.stringify(data));
     return message;
   }
 
