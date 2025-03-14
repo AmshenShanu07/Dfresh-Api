@@ -138,7 +138,7 @@ export class WhatsappService {
           },
         },
         body: {
-          text: `Hi ${name}!\n Welcome to your creative studio, please check out our products.\n\n Thank you!`,
+          text: `ഹായ് ${name}!\n നിങ്ങളുടെ ക്രിയേറ്റീവ് സ്റ്റുഡിയോയിലേക്ക് സ്വാഗതം, ദയവായി ഞങ്ങളുടെ ഉൽപ്പന്നങ്ങൾ പരിശോധിക്കുക.\n\n നന്ദി!`,
         },
         footer: {
           text: 'Amshen Yesudas: Your gateway to creativity!™',
@@ -185,7 +185,7 @@ export class WhatsappService {
       interactive: {
         type: 'catalog_message',
         body: {
-          text: 'Hello! Thanks for your interest. Ordering is easy. Just visit our catalog and add items to purchase.',
+          text: 'ഹലോ! താൽപ്പര്യത്തിന് നന്ദി. ഓർഡർ ചെയ്യുന്നത് എളുപ്പമാണ്. ഞങ്ങളുടെ കാറ്റലോഗ് സന്ദർശിച്ച് വാങ്ങാൻ ഇനങ്ങൾ ചേർക്കുക.',
         },
         action: {
           name: 'catalog_message',
