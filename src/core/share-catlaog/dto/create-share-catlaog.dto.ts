@@ -48,8 +48,8 @@ export class CreateShareCatlaogDto {
 
   @ApiProperty({ example: '' })
   @IsNotEmpty()
-  @IsDateString()
-  publishDate: Date;
+  @IsString()
+  publishDate: string;
 
   @ApiProperty({ example: '' })
   @IsNotEmpty()
