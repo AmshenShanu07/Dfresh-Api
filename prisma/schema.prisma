@@ -124,8 +124,8 @@ model ShareCatalog {
   catalogId String
   isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
-  publishDate DateTime? @default(now())
-  publishTime   DateTime? @default(now())
+  publishDate DateTime
+  publishTime   String
   ShareCatalogProducts ShareCatalogProducts[]
 }
 

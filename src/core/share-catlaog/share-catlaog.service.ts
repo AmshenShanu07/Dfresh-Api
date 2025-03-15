@@ -12,6 +12,8 @@ export class ShareCatlaogService {
     const shareCatalog = this.prismaService.shareCatalog.create({
       data: {
         catalogId: createShareCatlaogDto.catalogId,
+        publishDate: createShareCatlaogDto.publishDate,
+        publishTime: createShareCatlaogDto.publishTime,
         ShareCatalogProducts: {
           createMany: {
             data: createShareCatlaogDto.shareCatalogProducts.map((product) => ({
