@@ -54,8 +54,11 @@ model Products {
   isDeleted  Boolean  @default(false)
   createdAt  DateTime @default(now())
 
-  Purchase Purchase[]
-  Outlets Outlets[]
+  Purchase             Purchase[]
+  Outlets              Outlets[]
+  ShareCatalogProducts ShareCatalogProducts[]
+
+
   CatalogProducts CatalogProducts[]
 }
 
@@ -65,7 +68,7 @@ model Purchase {
   productId   String
   outlet      Outlets  @relation(fields: [outletId], references: [id])
   outletId    String
-  supplier    User @relation(fields: [supplierId], references: [id])
+  supplier    User     @relation(fields: [supplierId], references: [id])
   supplierId  String
   batchNumber String
 
@@ -89,30 +92,53 @@ model Purchase {
 }
 
 model Catalog {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   name          String
   description   String
-  isShared      Boolean  @default(false)
-  isDeleted     Boolean  @default(false)
-  isActive      Boolean  @default(true)
+  isShared      Boolean   @default(false)
+  isDeleted     Boolean   @default(false)
+  isActive      Boolean   @default(true)
   publishedDate DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt()
 
   CatalogProducts CatalogProducts[]
+  ShareCatalog ShareCatalog[]
+  ShareCatalogProducts ShareCatalogProducts[]
 }
 
 model CatalogProducts {
+  id         String   @id @default(cuid())
+  catalog    Catalog  @relation(fields: [catalogId], references: [id])
+  catalogId  String
+  product    Products @relation(fields: [productId], references: [id])
+  productId  String
+  createdAt  DateTime @default(now())
+}
+
+model ShareCatalog {
   id        String   @id @default(cuid())
   catalog   Catalog  @relation(fields: [catalogId], references: [id])
   catalogId String
-  product   Products @relation(fields: [productId], references: [id])
-  productId String
-  qnty      Float?
-  qntyUnit  ProductUnits?
-  price     Float?
+  isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  ShareCatalogProducts ShareCatalogProducts[]
+}
+
+model ShareCatalogProducts {
+  id            String       @id @default(cuid())
+  shareCatalog   ShareCatalog  @relation(fields: [shareCatalogId], references: [id])
+  shareCatalogId String
+  product       Products     @relation(fields: [productId], references: [id])
+  productId     String
+  qnty          Float
+  qntyUnit      ProductUnits
+  price         Float
+  createdAt     DateTime     @default(now())
+
+  Catalog Catalog[]
 }
 
 model Outlets {
@@ -125,10 +151,10 @@ model Outlets {
   createdAt      DateTime @default(now())
   isDeleted      Boolean  @default(false)
   isActive       Boolean  @default(true)
-  commission     Float 
+  commission     Float
 
-  products Products[]
-  Purchase Purchase[]
+  products    Products[]
+  Purchase    Purchase[]
   OutletAgent Staff[]
 }
 

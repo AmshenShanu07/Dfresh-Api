@@ -4,10 +4,11 @@ import { OutletModule } from './core/outlet/outlet.module';
 import { CategoryModule } from './core/category/category.module';
 import { ProductModule } from './core/product/product.module';
 import { PurchaseModule } from './core/purchase/purchase.module';
-import { SupplierModule } from './core/supplier/supplier.module';
+// import { SupplierModule } from './core/supplier/supplier.module';
 import { CatlogModule } from './core/catlog/catlog.module';
 import { ConfigModule } from '@nestjs/config';
 import { WhatsappModule } from './core/whatsapp/whatsapp.module';
+import { ShareCatlaogModule } from './core/share-catlaog/share-catlaog.module';
 
 @Module({
   imports: [
@@ -20,9 +21,10 @@ import { WhatsappModule } from './core/whatsapp/whatsapp.module';
     CategoryModule,
     ProductModule,
     PurchaseModule,
-    SupplierModule,
+    // SupplierModule,
     CatlogModule,
     WhatsappModule,
+    ShareCatlaogModule,
   ],
 })
 export class AppModule {}

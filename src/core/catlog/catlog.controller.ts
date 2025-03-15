@@ -3,7 +3,7 @@ import {
   Get,
   Post,
   Body,
-  Put,
+  // Put,
   Param,
   Delete,
   Query,
@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { CatlogService } from './catlog.service';
 import { CreateCatlogDto } from './dto/create-catlog.dto';
-import { ShareCatlogDto } from './dto/share-catlog.dto';
+// import { ShareCatlogDto } from './dto/share-catlog.dto';
 import { RemoveCatlogProductDto } from '../category/dto/remove-product.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -44,6 +44,13 @@ export class CatlogController {
 
   @ApiBearerAuth()
   @UseGuards(UserAuthGuard)
+  @Get('/dropdown-list')
+  getDropdownList() {
+    return this.catlogService.getAllCatlogDropDown();
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
   @Get('detail/:id')
   findOne(@Param('id') id: string) {
     return this.catlogService.findOne(id);
@@ -51,10 +58,17 @@ export class CatlogController {
 
   @ApiBearerAuth()
   @UseGuards(UserAuthGuard)
-  @Put('share/:id')
-  shareCatlog(@Body() shareCatlogDto: ShareCatlogDto) {
-    return this.catlogService.shareCatlog(shareCatlogDto);
+  @Get('products/:id')
+  getCatlogProducts(@Param('id') id: string) {
+    return this.catlogService.getCatalogProducts(id);
   }
+
+  // @ApiBearerAuth()
+  // @UseGuards(UserAuthGuard)
+  // @Put('share/:id')
+  // shareCatlog(@Body() shareCatlogDto: ShareCatlogDto) {
+  //   return this.catlogService.shareCatlog(shareCatlogDto);
+  // }
 
   @ApiBearerAuth()
   @UseGuards(UserAuthGuard)
