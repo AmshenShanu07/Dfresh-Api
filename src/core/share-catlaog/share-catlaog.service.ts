@@ -62,6 +62,10 @@ export class ShareCatlaogService {
       orderBy: {
         createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
       },
+      include: {
+        ShareCatalogProducts: { include: { product: true } },
+        catalog: true,
+      },
       take: takeCount,
       skip: skipCount,
     });

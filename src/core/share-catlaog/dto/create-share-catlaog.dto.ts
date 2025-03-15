@@ -3,6 +3,7 @@ import { ProductUnits } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsDateString,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -44,4 +45,14 @@ export class CreateShareCatlaogDto {
   @ValidateNested({ each: true })
   @Type(() => ShareCatalogProductsDto)
   shareCatalogProducts: ShareCatalogProductsDto[];
+
+  @ApiProperty({ example: '' })
+  @IsNotEmpty()
+  @IsDateString()
+  publishDate: Date;
+
+  @ApiProperty({ example: '' })
+  @IsNotEmpty()
+  @IsDateString()
+  publishTime: Date;
 }
