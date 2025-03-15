@@ -86,7 +86,8 @@ export class PurchaseService {
       takeCount = undefined;
       skipCount = undefined;
     }
-    return this.prismaService.supplier.findMany({
+    return this.prismaService.purchase.findMany({
+      include: { product: { include: { category: true } } },
       orderBy: {
         createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
       },

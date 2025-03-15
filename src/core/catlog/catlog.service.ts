@@ -60,6 +60,11 @@ export class CatlogService {
       skipCount = undefined;
     }
     return this.prismaService.catalog.findMany({
+      include: {
+        CatalogProducts: {
+          include: { product: { include: { category: true } } },
+        },
+      },
       orderBy: {
         createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
       },
@@ -71,7 +76,7 @@ export class CatlogService {
   getCatalogProducts(id: string) {
     return this.prismaService.catalogProducts.findMany({
       where: { catalogId: id },
-      include: { product: true },
+      include: { product: { include: { category: true } } },
     });
   }
 
