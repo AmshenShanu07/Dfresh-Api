@@ -35,6 +35,7 @@ export class ProductService {
       this.prismaService.products.count({ where: { isDeleted: false } }),
       this.prismaService.products.findMany({
         where: { isDeleted: false },
+        include: { category: true },
         orderBy: {
           createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
         },
