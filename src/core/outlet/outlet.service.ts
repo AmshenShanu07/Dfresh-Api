@@ -50,7 +50,7 @@ export class OutletService {
     });
   }
 
-  filterList(filter: OutletFilterDto) {
+  async filterList(filter: OutletFilterDto) {
     let takeCount = parseInt(filter.count + '');
     let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
 
@@ -59,15 +59,20 @@ export class OutletService {
       skipCount = undefined;
     }
 
-    return this.prismaService.outlets.findMany({
-      where: { isDeleted: false },
-      include: { OutletAgent: { include: { user: true } } },
-      orderBy: {
-        [filter.sortBy]: filter.sortOrder === -1 ? 'asc' : 'desc',
-      },
-      take: takeCount,
-      skip: skipCount,
-    });
+    const [total, data] = await Promise.all([
+      this.prismaService.outlets.count({ where: { isDeleted: false } }),
+      this.prismaService.outlets.findMany({
+        where: { isDeleted: false },
+        include: { OutletAgent: { include: { user: true } } },
+        orderBy: {
+          [filter.sortBy]: filter.sortOrder === -1 ? 'asc' : 'desc',
+        },
+        take: takeCount,
+        skip: skipCount,
+      }),
+    ]);
+
+    return { total, data };
   }
 
   async update(id: string, updateOutletDto: UpdateOutletDto) {

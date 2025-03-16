@@ -22,7 +22,7 @@ export class ProductService {
     return this.prismaService.products.findFirst({ where: { id } });
   }
 
-  getList(filter: FilterCommonDto) {
+  async getList(filter: FilterCommonDto) {
     let takeCount = parseInt(filter.count + '');
     let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
 
@@ -30,14 +30,20 @@ export class ProductService {
       takeCount = undefined;
       skipCount = undefined;
     }
-    return this.prismaService.products.findMany({
-      where: { isDeleted: false },
-      orderBy: {
-        createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
-      },
-      take: takeCount,
-      skip: skipCount,
-    });
+
+    const [total, data] = await Promise.all([
+      this.prismaService.products.count({ where: { isDeleted: false } }),
+      this.prismaService.products.findMany({
+        where: { isDeleted: false },
+        orderBy: {
+          createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
+        },
+        take: takeCount,
+        skip: skipCount,
+      }),
+    ]);
+
+    return { total, data };
   }
 
   update(id: string, updateProductDto: UpdateProductDto) {

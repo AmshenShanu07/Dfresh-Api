@@ -52,7 +52,7 @@ export class ShareCatlaogService {
     });
   }
 
-  getList(filter: FilterCommonDto) {
+  async getList(filter: FilterCommonDto) {
     let takeCount = parseInt(filter.count + '');
     let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
 
@@ -60,19 +60,25 @@ export class ShareCatlaogService {
       takeCount = undefined;
       skipCount = undefined;
     }
-    return this.prismaService.shareCatalog.findMany({
-      orderBy: {
-        createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
-      },
-      include: {
-        ShareCatalogProducts: {
-          include: { product: { include: { category: true } } },
+
+    const [total, data] = await Promise.all([
+      this.prismaService.shareCatalog.count({}),
+      this.prismaService.shareCatalog.findMany({
+        orderBy: {
+          createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
         },
-        catalog: true,
-      },
-      take: takeCount,
-      skip: skipCount,
-    });
+        include: {
+          ShareCatalogProducts: {
+            include: { product: { include: { category: true } } },
+          },
+          catalog: true,
+        },
+        take: takeCount,
+        skip: skipCount,
+      }),
+    ]);
+
+    return { total, data };
   }
 
   update(id: string, updateShareCatlaogDto: UpdateShareCatlaogDto) {

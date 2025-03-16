@@ -51,7 +51,7 @@ export class CatlogService {
     });
   }
 
-  getList(filter: FilterCommonDto) {
+  async getList(filter: FilterCommonDto) {
     let takeCount = parseInt(filter.count + '');
     let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
 
@@ -59,18 +59,24 @@ export class CatlogService {
       takeCount = undefined;
       skipCount = undefined;
     }
-    return this.prismaService.catalog.findMany({
-      include: {
-        CatalogProducts: {
-          include: { product: { include: { category: true } } },
+
+    const [total, data] = await Promise.all([
+      this.prismaService.catalog.count(),
+      this.prismaService.catalog.findMany({
+        include: {
+          CatalogProducts: {
+            include: { product: { include: { category: true } } },
+          },
         },
-      },
-      orderBy: {
-        createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
-      },
-      take: takeCount,
-      skip: skipCount,
-    });
+        orderBy: {
+          createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
+        },
+        take: takeCount,
+        skip: skipCount,
+      }),
+    ]);
+
+    return { total, data };
   }
 
   getCatalogProducts(id: string) {

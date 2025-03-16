@@ -42,7 +42,7 @@ export class CategoryService {
     });
   }
 
-  getList(filter: FilterCommonDto) {
+  async getList(filter: FilterCommonDto) {
     let takeCount = parseInt(filter.count + '');
     let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
 
@@ -50,13 +50,18 @@ export class CategoryService {
       takeCount = undefined;
       skipCount = undefined;
     }
-    return this.prismaService.category.findMany({
-      orderBy: {
-        createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
-      },
-      take: takeCount,
-      skip: skipCount,
-    });
+    const [total, data] = await Promise.all([
+      this.prismaService.category.count(),
+      this.prismaService.category.findMany({
+        orderBy: {
+          createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
+        },
+        take: takeCount,
+        skip: skipCount,
+      }),
+    ]);
+
+    return { total, data };
   }
 
   update(id: string, updateCategoryDto: UpdateCategoryDto) {

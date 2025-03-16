@@ -78,7 +78,7 @@ export class PurchaseService {
     return this.prismaService.purchase.findMany();
   }
 
-  getList(filter: FilterCommonDto) {
+  async getList(filter: FilterCommonDto) {
     let takeCount = parseInt(filter.count + '');
     let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
 
@@ -86,14 +86,20 @@ export class PurchaseService {
       takeCount = undefined;
       skipCount = undefined;
     }
-    return this.prismaService.purchase.findMany({
-      include: { product: { include: { category: true } } },
-      orderBy: {
-        createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
-      },
-      take: takeCount,
-      skip: skipCount,
-    });
+
+    const [total, data] = await Promise.all([
+      this.prismaService.purchase.count({}),
+      this.prismaService.purchase.findMany({
+        include: { product: { include: { category: true } } },
+        orderBy: {
+          createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
+        },
+        take: takeCount,
+        skip: skipCount,
+      }),
+    ]);
+
+    return { total, data };
   }
 
   findOne(id: string) {
