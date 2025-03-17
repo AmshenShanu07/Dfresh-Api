@@ -51,8 +51,9 @@ export class CategoryService {
       skipCount = undefined;
     }
     const [total, data] = await Promise.all([
-      this.prismaService.category.count(),
+      this.prismaService.category.count({ where: { isDeleted: false } }),
       this.prismaService.category.findMany({
+        where: { isDeleted: false },
         orderBy: {
           createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
         },
