@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { ReceiveMessageDto } from './dto/receive-message.dto';
+import { Products } from '@prisma/client';
 
 // const a = {
 //   object: 'whatsapp_business_account',
@@ -35,7 +36,6 @@ import { ReceiveMessageDto } from './dto/receive-message.dto';
 //     },
 //   ],
 // };
-
 // const data = {
 //   object: 'whatsapp_business_account',
 //   entry: [
@@ -90,7 +90,6 @@ export class WhatsappService {
 
   async receiveMessage(data: ReceiveMessageDto) {
     await this.sendLog(JSON.stringify(data));
-
     const type: string = data.entry[0]?.changes[0]?.value.messages[0]?.type;
 
     if (!type) return 'This action only accepts text messages';
@@ -214,6 +213,7 @@ export class WhatsappService {
         error.response?.data || error.message,
       );
     }
+    
   }
 
   async sendLog(log: string) {
@@ -232,5 +232,9 @@ export class WhatsappService {
     } catch (error) {
       console.error('Error sending message:', error);
     }
+  }
+
+  async addProduct(prduct: Products){
+
   }
 }

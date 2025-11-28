@@ -7,167 +7,138 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserTypes {
-  ADMIN
-  CUSTOMER
-  OUTLET_AGENT
-  SUPPLIER
-  CENTRAL_STAFF
-  PURCHASE_STAFF
-}
-
 model User {
-  id          String    @id @default(cuid())
+  id          String     @id @default(cuid())
   name        String
-  phone       String    @unique()
+  phone       String     @unique
   password    String
-  userType    UserTypes @default(CUSTOMER)
-  email       String?   @default("")
-  createdAt   DateTime  @default(now())
-  address     String?   @default("")
-  OutletAgent Staff[]
-
-  Purchase Purchase[]
-}
-
-model Category {
-  id        String   @id @default(cuid())
-  name      String
-  isActive  Boolean  @default(true)
-  isDeleted Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  Products Products[]
-}
-
-enum ProductUnits {
-  KG
-  G
-}
-
-model Products {
-  id         String   @id @default(cuid())
-  name       String
-  image      String[]
-  category   Category @relation(fields: [categoryId], references: [id])
-  categoryId String
-  isActive   Boolean  @default(true)
-  isDeleted  Boolean  @default(false)
-  createdAt  DateTime @default(now())
-
-  Purchase             Purchase[]
-  Outlets              Outlets[]
-  ShareCatalogProducts ShareCatalogProducts[]
-
-
-  CatalogProducts CatalogProducts[]
-}
-
-model Purchase {
-  id          String   @id @default(cuid())
-  product     Products @relation(fields: [productId], references: [id])
-  productId   String
-  outlet      Outlets  @relation(fields: [outletId], references: [id])
-  outletId    String
-  supplier    User     @relation(fields: [supplierId], references: [id])
-  supplierId  String
-  batchNumber String
-
-  quantity     Float
-  quantityUnit ProductUnits
-
-  totalPrice   Float
-  pricePerUnit Float
-
-  releasedQtny     Float?
-  releasedQntyUnit ProductUnits?
-
-  cleanedQnty     Float?
-  cleanedQntyUnit ProductUnits?
-
-  cleanedCount Float?
-
-  thresholdQnty     Float?
-  thresholdQntyUnit ProductUnits?
-  createdAt         DateTime      @default(now())
-}
-
-model Catalog {
-  id            String    @id @default(cuid())
-  name          String
-  description   String
-  isShared      Boolean   @default(false)
-  isDeleted     Boolean   @default(false)
-  isActive      Boolean   @default(true)
-  publishedDate DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt()
-
-  CatalogProducts CatalogProducts[]
-  ShareCatalog ShareCatalog[]
-  ShareCatalogProducts ShareCatalogProducts[]
-}
-
-model CatalogProducts {
-  id         String   @id @default(cuid())
-  catalog    Catalog  @relation(fields: [catalogId], references: [id])
-  catalogId  String
-  product    Products @relation(fields: [productId], references: [id])
-  productId  String
-  createdAt  DateTime @default(now())
-}
-
-model ShareCatalog {
-  id        String   @id @default(cuid())
-  catalog   Catalog  @relation(fields: [catalogId], references: [id])
-  catalogId String
-  isDeleted Boolean  @default(false)
-  createdAt DateTime @default(now())
-  publishDate String
-  publishTime   String
-  ShareCatalogProducts ShareCatalogProducts[]
-}
-
-model ShareCatalogProducts {
-  id            String       @id @default(cuid())
-  shareCatalog   ShareCatalog  @relation(fields: [shareCatalogId], references: [id])
-  shareCatalogId String
-  product       Products     @relation(fields: [productId], references: [id])
-  productId     String
-  qnty          Float
-  qntyUnit      ProductUnits
-  price         Float
-  createdAt     DateTime     @default(now())
-
-  Catalog Catalog[]
-}
-
-model Outlets {
-  id             String   @id @default(cuid())
-  name           String?  @default("")
-  address        String?  @default("")
-  phone          String?  @default("")
-  location       String
-  isSalesEnabled Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  isDeleted      Boolean  @default(false)
-  isActive       Boolean  @default(true)
-  commission     Float
-
-  products    Products[]
+  userType    UserTypes  @default(CUSTOMER)
+  email       String?    @default("")
+  createdAt   DateTime   @default(now())
+  address     String?    @default("")
   Purchase    Purchase[]
   OutletAgent Staff[]
 }
 
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  isActive  Boolean    @default(true)
+  isDeleted Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  Products  Products[]
+}
+
+model Products {
+  id                   String                 @id @default(cuid())
+  name                 String
+  image                String[]
+  categoryId           String
+  isActive             Boolean                @default(true)
+  isDeleted            Boolean                @default(false)
+  createdAt            DateTime               @default(now())
+  CatalogProducts      CatalogProducts[]
+  category             Category               @relation(fields: [categoryId], references: [id])
+  Purchase             Purchase[]
+  ShareCatalogProducts ShareCatalogProducts[]
+  Outlets              Outlets[]              @relation("OutletsToProducts")
+}
+
+model Purchase {
+  id                String        @id @default(cuid())
+  productId         String
+  outletId          String
+  supplierId        String
+  batchNumber       String
+  quantity          Float
+  quantityUnit      ProductUnits
+  totalPrice        Float
+  pricePerUnit      Float
+  releasedQtny      Float?
+  releasedQntyUnit  ProductUnits?
+  cleanedQnty       Float?
+  cleanedQntyUnit   ProductUnits?
+  cleanedCount      Float?
+  thresholdQnty     Float?
+  thresholdQntyUnit ProductUnits?
+  createdAt         DateTime      @default(now())
+  outlet            Outlets       @relation(fields: [outletId], references: [id])
+  product           Products      @relation(fields: [productId], references: [id])
+  supplier          User          @relation(fields: [supplierId], references: [id])
+}
+
+model Catalog {
+  id                   String                 @id @default(cuid())
+  name                 String
+  description          String
+  isShared             Boolean                @default(false)
+  isDeleted            Boolean                @default(false)
+  isActive             Boolean                @default(true)
+  publishedDate        DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  CatalogProducts      CatalogProducts[]
+  ShareCatalog         ShareCatalog[]
+  ShareCatalogProducts ShareCatalogProducts[] @relation("CatalogToShareCatalogProducts")
+}
+
+model CatalogProducts {
+  id        String   @id @default(cuid())
+  catalogId String
+  productId String
+  createdAt DateTime @default(now())
+  catalog   Catalog  @relation(fields: [catalogId], references: [id])
+  product   Products @relation(fields: [productId], references: [id])
+}
+
+model ShareCatalog {
+  id                   String                 @id @default(cuid())
+  catalogId            String
+  isDeleted            Boolean                @default(false)
+  createdAt            DateTime               @default(now())
+  publishDate          String
+  publishTime          String
+  catalog              Catalog                @relation(fields: [catalogId], references: [id])
+  ShareCatalogProducts ShareCatalogProducts[]
+}
+
+model ShareCatalogProducts {
+  id             String       @id @default(cuid())
+  shareCatalogId String
+  productId      String
+  qnty           Float
+  qntyUnit       ProductUnits
+  price          Float
+  createdAt      DateTime     @default(now())
+  product        Products     @relation(fields: [productId], references: [id])
+  shareCatalog   ShareCatalog @relation(fields: [shareCatalogId], references: [id])
+  Catalog        Catalog[]    @relation("CatalogToShareCatalogProducts")
+}
+
+model Outlets {
+  id             String     @id @default(cuid())
+  name           String?    @default("")
+  address        String?    @default("")
+  phone          String?    @default("")
+  location       String
+  isSalesEnabled Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  isDeleted      Boolean    @default(false)
+  isActive       Boolean    @default(true)
+  commission     Float
+  Purchase       Purchase[]
+  OutletAgent    Staff[]
+  products       Products[] @relation("OutletsToProducts")
+}
+
 model Staff {
   id        String   @id @default(cuid())
-  user      User     @relation(fields: [userId], references: [id])
   userId    String
-  outlet    Outlets  @relation(fields: [outletId], references: [id])
   outletId  String
   isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
+  outlet    Outlets  @relation(fields: [outletId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 model Supplier {
@@ -179,4 +150,18 @@ model Supplier {
   address      String?  @default("")
   createdAt    DateTime @default(now())
   isDeleted    Boolean  @default(false)
+}
+
+enum UserTypes {
+  ADMIN
+  CUSTOMER
+  OUTLET_AGENT
+  CENTRAL_STAFF
+  PURCHASE_STAFF
+  SUPPLIER
+}
+
+enum ProductUnits {
+  KG
+  G
 }
