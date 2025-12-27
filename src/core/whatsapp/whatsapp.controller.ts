@@ -12,7 +12,12 @@ export class WhatsappController {
   }
 
   @Get()
-  verify(@Query() query: any) {
-    return { query };
+  verify(
+    @Query('hub.mode') mode: string, 
+    @Query('hub.verify_token') token: string, 
+    @Query('hub.challenge') challenge: string
+  ): string {
+
+    return challenge;
   }
 }
