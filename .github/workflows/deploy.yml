@@ -48,4 +48,3 @@ jobs:
             cd ${{ secrets.APP_PATH }}
             rm -rf dist
             tar -xzf /tmp/build.tar.gz -C .
-            npm ci --omit=dev
