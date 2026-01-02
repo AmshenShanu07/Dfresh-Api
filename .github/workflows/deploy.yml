@@ -1,0 +1,53 @@
+name: Deploy NestJS to EC2
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build NestJS app
+        run: npm run build
+
+      - name: Archive build
+        run: |
+          tar -czf build.tar.gz dist package.json package-lock.json ecosystem.config.js
+
+      - name: Upload build to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "build.tar.gz"
+          target: "/tmp"
+
+      - name: Deploy on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ${{ secrets.APP_PATH }}
+            rm -rf dist
+            tar -xzf /tmp/build.tar.gz -C .
+            npm ci --omit=dev
+            pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
+            pm2 save
