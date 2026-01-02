@@ -27,7 +27,7 @@ jobs:
 
       - name: Archive build
         run: |
-          tar -czf build.tar.gz dist package.json package-lock.json deploy.sh
+          tar -czf build.tar.gz dist package.json package-lock.json
 
       - name: Upload build to EC2
         uses: appleboy/scp-action@v0.1.7
@@ -48,5 +48,5 @@ jobs:
             cd ${{ secrets.APP_PATH }}
             rm -rf dist
             tar -xzf /tmp/build.tar.gz -C .
-            chmod +x deploy.sh
-            ./deploy.sh
+            pm2 kill
+            pm2 start "node --max-old-space-size=2048 ./dist/main.js" --name api
