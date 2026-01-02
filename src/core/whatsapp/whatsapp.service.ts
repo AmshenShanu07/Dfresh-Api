@@ -133,7 +133,7 @@ export class WhatsappService {
         header: {
           type: 'image',
           image: {
-            id: '1140150290765079',
+            id: '26584478994487901',
           },
         },
         body: {
@@ -189,7 +189,7 @@ export class WhatsappService {
         action: {
           name: 'catalog_message',
           parameters: {
-            thumbnail_product_retailer_id: 'e6a9dwzudz',
+            thumbnail_product_retailer_id: 'whrew3jrmp',
           },
         },
         footer: {
