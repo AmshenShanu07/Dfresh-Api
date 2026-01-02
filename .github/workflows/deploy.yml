@@ -48,3 +48,5 @@ jobs:
             cd ${{ secrets.APP_PATH }}
             rm -rf dist
             tar -xzf /tmp/build.tar.gz -C .
+            pm2 kill
+            pm2 start "node --max-old-space-size=2048 ./dist/main.js" --name api
