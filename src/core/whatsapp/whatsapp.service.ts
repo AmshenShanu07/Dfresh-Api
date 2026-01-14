@@ -53,8 +53,16 @@ export class WhatsappService {
   }
 
   async receiveMessage(data: ReceiveMessageDto) {
+    
+    if(data.entry[0]?.changes[0]?.value?.statuses[0]?.pricing?.type === 'free_customer_service') {
+      console.log('Free customer service');
+      
+      return 'free_customer_service';
+    }
+    
     await this.sendLog(JSON.stringify(data));
-    const type: string = data.entry[0]?.changes[0]?.value.messages[0]?.type;
+
+    const type: string = data.entry[0]?.changes[0]?.value?.messages[0]?.type;
 
     if (!type) return 'This action only accepts text messages';
 
@@ -69,9 +77,6 @@ export class WhatsappService {
       return 'This action only accepts text messages';
     }
 
-    if(type === 'free_customer_service') {
-      return 'free_customer_service';
-    }
 
     const message = data.entry[0].changes[0].value.messages[0].text.body;
     const name = data.entry[0].changes[0].value.contacts[0].profile.name;
