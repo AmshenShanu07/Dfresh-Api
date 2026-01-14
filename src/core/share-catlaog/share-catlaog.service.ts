@@ -3,12 +3,39 @@ import { CreateShareCatlaogDto } from './dto/create-share-catlaog.dto';
 import { UpdateShareCatlaogDto } from './dto/update-share-catlaog.dto';
 import { PrismaService } from 'src/services/prisma.service';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
+import { MetaCatalogService } from 'src/services/meta-catalog.service';
+import { MetaUpdateCatalogProductDto } from 'src/common/dto/meta-catlog-product.dto';
 
 @Injectable()
 export class ShareCatlaogService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly catalogService: MetaCatalogService,
+  ) {}
 
-  create(createShareCatlaogDto: CreateShareCatlaogDto) {
+  async create(createShareCatlaogDto: CreateShareCatlaogDto) {
+
+    const productsList = await this.prismaService.products.findMany({
+      where: {
+        id: {
+          in: createShareCatlaogDto.shareCatalogProducts.map((product) => product.productId),
+        },
+      },
+    });
+
+    await Promise.all(
+      productsList.map((product) => {
+        const productData: MetaUpdateCatalogProductDto = {
+          availability: "in stock",
+          price: createShareCatlaogDto.shareCatalogProducts.find((p) => p.productId === product.id)?.price || 0,
+          visibility: "published",
+        };
+        
+        productData.price = productData.price * 100;
+        return this.catalogService.updateProduct(product.catalogId, productData);
+      })
+    );
+
     const shareCatalog = this.prismaService.shareCatalog.create({
       data: {
         catalogId: createShareCatlaogDto.catalogId,
@@ -21,6 +48,7 @@ export class ShareCatlaogService {
               qnty: product.qnty,
               qntyUnit: product.qntyUnit,
               price: product.price,
+              productCatalogId: product.productCatalogId,
             })),
           },
         },
@@ -30,6 +58,7 @@ export class ShareCatlaogService {
         catalog: true,
       },
     });
+    
     return shareCatalog;
   }
 
@@ -88,4 +117,5 @@ export class ShareCatlaogService {
   remove(id: string) {
     return `This action removes a #${id} shareCatlaog`;
   }
+
 }

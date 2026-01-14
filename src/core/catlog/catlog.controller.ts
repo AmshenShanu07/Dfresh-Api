@@ -3,7 +3,7 @@ import {
   Get,
   Post,
   Body,
-  // Put,
+  Put,
   Param,
   Delete,
   Query,
@@ -16,6 +16,7 @@ import { RemoveCatlogProductDto } from '../category/dto/remove-product.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { UserAuthGuard } from 'src/guards/user.guard';
+import { UpdateCatlogDto } from './dto/update-catlog.dto';
 
 @Controller('catlog')
 export class CatlogController {
@@ -54,6 +55,13 @@ export class CatlogController {
   @Get('detail/:id')
   findOne(@Param('id') id: string) {
     return this.catlogService.findOne(id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
+  @Put('update/:id')
+  update(@Param('id') id: string, @Body() updateCatlogDto: UpdateCatlogDto) {
+    return this.catlogService.update(id, updateCatlogDto);
   }
 
   @ApiBearerAuth()

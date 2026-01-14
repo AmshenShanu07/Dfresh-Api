@@ -11,6 +11,14 @@ export class CreateProductDto {
   name: string;
 
   @ApiProperty({
+    description: 'Description of the product',
+    example: 'Description of the product',
+  })
+  @IsNotEmpty()
+  @IsString()
+  description: string;
+
+  @ApiProperty({
     description: 'Image of the product',
     example: ['https://example'],
   })
@@ -26,4 +34,5 @@ export class CreateProductDto {
   @IsNotEmpty()
   @IsString()
   categoryId: string;
+
 }

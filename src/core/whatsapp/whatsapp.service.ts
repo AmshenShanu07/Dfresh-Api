@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { ReceiveMessageDto } from './dto/receive-message.dto';
-import { Products } from '@prisma/client';
+import { Products, UserTypes } from '@prisma/client';
+import { PrismaService } from 'src/services/prisma.service';
 
 // const a = {
 //   object: 'whatsapp_business_account',
@@ -81,7 +82,10 @@ export class WhatsappService {
   private readonly waPhoneNumberId: string;
   private readonly waUserToken: string;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private prismaService: PrismaService,
+    private configService: ConfigService
+  ) {
     this.botToken = this.configService.get<string>('BOT_TOKEN');
     this.tgChatId = this.configService.get<string>('TG_CHAT_ID');
     this.waPhoneNumberId = this.configService.get<string>('WA_PHONE_NUMBER_ID');
@@ -157,6 +161,23 @@ export class WhatsappService {
     };
 
     try {
+      const user = await this.prismaService.user.findFirst({
+        where: {
+          phone: phone,
+        },
+      });
+
+      if (!user) {
+        await this.prismaService.user.create({
+          data: {
+            name: name,
+            password: 'customer-password',
+            phone: phone,
+            userType: UserTypes.CUSTOMER,
+          },
+        });
+      }
+
       const response = await axios.post(url, payload, {
         headers: {
           'Content-Type': 'application/json',
@@ -176,6 +197,17 @@ export class WhatsappService {
   async sendProduct(phone: string) {
     const url = `https://graph.facebook.com/v22.0/${this.waPhoneNumberId}/messages`;
 
+    const products = await this.prismaService.products.findMany({
+      where: {
+        isActive: true,
+        isDeleted: false,
+      },
+    });
+
+    const productId = products.length > 0 ? products[Math.floor(Math.random() * products.length)].catalogId  : undefined;
+    
+    if(!productId) return 'No products found';
+    
     const payload = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -189,7 +221,7 @@ export class WhatsappService {
         action: {
           name: 'catalog_message',
           parameters: {
-            thumbnail_product_retailer_id: 'whrew3jrmp',
+            thumbnail_product_retailer_id: productId
           },
         },
         footer: {

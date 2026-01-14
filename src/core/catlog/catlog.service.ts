@@ -4,6 +4,7 @@ import { CreateCatlogDto } from './dto/create-catlog.dto';
 import { PrismaService } from 'src/services/prisma.service';
 import { RemoveCatlogProductDto } from '../category/dto/remove-product.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
+import { UpdateCatlogDto } from './dto/update-catlog.dto';
 
 @Injectable()
 export class CatlogService {
@@ -17,11 +18,12 @@ export class CatlogService {
       },
     });
     await Promise.all(
-      createCatlogDto.productIds.map((productId) => {
+      createCatlogDto.products.map((product) => {
         return this.prismaService.catalogProducts.create({
           data: {
+            productId: product.productId,
             catalogId: catalog.id,
-            productId,
+            productCatalogId: product.productCatalogId,
           },
         });
       }),
@@ -105,39 +107,31 @@ export class CatlogService {
     return this.findOne(catalog.id);
   }
 
-  // async shareCatlog(shareCatlogDto: ShareCatlogDto) {
-  //   const catalog = await this.prismaService.catalog.findFirst({
-  //     where: { id: shareCatlogDto.catlogId },
-  //   });
+  async update(id: string, updateCatlogDto: UpdateCatlogDto) {
+    await this.prismaService.catalogProducts.deleteMany({
+      where: { catalogId: id },
+    });
 
-  //   if (!catalog) {
-  //     return new BadRequestException('Catalog not found');
-  //   }
+    await Promise.all(
+      updateCatlogDto.products.map((product) => {
+        return this.prismaService.catalogProducts.create({
+          data: {
+            productId: product.productId,
+            catalogId: id,
+            productCatalogId: product.productCatalogId,
+          },
+        });
+      }),
+    );
 
-  //   await Promise.all(
-  //     shareCatlogDto.products.map((product) => {
-  //       return this.prismaService.catalogProducts.create({
-  //         data: {
-  //           catalogId: catalog.id,
-  //           productId: product.productId,
-  //           qnty: product.qnty,
-  //           qntyUnit: product.qntyUnit,
-  //           price: product.price,
-  //         },
-  //       });
-  //     }),
-  //   );
-
-  //   await this.prismaService.catalog.update({
-  //     where: { id: catalog.id },
-  //     data: {
-  //       publishedDate: new Date(shareCatlogDto.publishDate),
-  //       isShared: true,
-  //     },
-  //   });
-
-  //   return this.findOne(catalog.id);
-  // }
+    return this.prismaService.catalog.update({
+      where: { id },
+      data: {
+        name: updateCatlogDto.name,
+        description: updateCatlogDto.description,
+      },
+    });
+  }
 
   softDelete(id: string) {
     return this.prismaService.catalog.update({

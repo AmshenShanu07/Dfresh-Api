@@ -11,6 +11,7 @@ import { CreateStaffDto } from './dto/create-staff.dto';
 import { PrismaService } from 'src/services/prisma.service';
 import { UserTypeDto } from './dto/user-type.dto';
 import { JwtService } from '@nestjs/jwt';
+import { UserTypes } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
@@ -48,6 +49,7 @@ export class UsersService {
     const isExist = await this.prismaService.user.findFirst({
       where: {
         phone: data.phone,
+        userType: { not: UserTypes.CUSTOMER },
       },
     });
 

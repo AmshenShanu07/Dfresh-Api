@@ -1,5 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsNotEmpty, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsNotEmpty, IsString, ValidateNested } from 'class-validator';
+
+export class CreateCatlogProductDto {
+  @ApiProperty({ example: 'abcdefg' })
+  @IsString()
+  @IsNotEmpty()
+  productId: string;
+
+  @ApiProperty({ example: 'abcdefg' })
+  @IsString()
+  @IsNotEmpty()
+  productCatalogId: string;
+}
 
 export class CreateCatlogDto {
   @ApiProperty({ example: 'Best Sellers' })
@@ -12,9 +25,9 @@ export class CreateCatlogDto {
   @IsNotEmpty()
   description: string;
 
-  @ApiProperty({ example: [] })
+  @ApiProperty({ type: [CreateCatlogProductDto] })
   @IsArray()
-  @IsString({ each: true })
+  @Type(() => CreateCatlogProductDto)
   @IsNotEmpty()
-  productIds: string[];
+  products: CreateCatlogProductDto[];
 }

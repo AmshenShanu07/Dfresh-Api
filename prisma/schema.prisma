@@ -32,8 +32,10 @@ model Category {
 model Products {
   id                   String                 @id @default(cuid())
   name                 String
+  description          String
   image                String[]
   categoryId           String
+  catalogId            String                 @default("")
   isActive             Boolean                @default(true)
   isDeleted            Boolean                @default(false)
   createdAt            DateTime               @default(now())
@@ -83,18 +85,20 @@ model Catalog {
 }
 
 model CatalogProducts {
-  id        String   @id @default(cuid())
-  catalogId String
-  productId String
-  createdAt DateTime @default(now())
-  catalog   Catalog  @relation(fields: [catalogId], references: [id])
-  product   Products @relation(fields: [productId], references: [id])
+  id                 String   @id @default(cuid())
+  catalogId          String
+  productId          String
+  productCatalogId   String     @default("")
+  createdAt          DateTime   @default(now())
+  catalog            Catalog    @relation(fields: [catalogId], references: [id])
+  product            Products   @relation(fields: [productId], references: [id])
 }
 
 model ShareCatalog {
   id                   String                 @id @default(cuid())
   catalogId            String
   isDeleted            Boolean                @default(false)
+  isActive             Boolean                @default(true)
   createdAt            DateTime               @default(now())
   publishDate          String
   publishTime          String
@@ -105,6 +109,7 @@ model ShareCatalog {
 model ShareCatalogProducts {
   id             String       @id @default(cuid())
   shareCatalogId String
+  productCatalogId String     @default("")
   productId      String
   qnty           Float
   qntyUnit       ProductUnits
