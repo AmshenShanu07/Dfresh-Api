@@ -5,75 +5,35 @@ import { ReceiveMessageDto } from './dto/receive-message.dto';
 import { Products, UserTypes } from '@prisma/client';
 import { PrismaService } from 'src/services/prisma.service';
 
-// const a = {
-//   object: 'whatsapp_business_account',
-//   entry: [
-//     {
-//       id: '115730194473734',
-//       changes: [
-//         {
-//           value: {
-//             messaging_product: 'whatsapp',
-//             metadata: {
-//               display_phone_number: '16469076883',
-//               phone_number_id: '111491931567355',
-//             },
-//             contacts: [
-//               { profile: { name: 'Rishabh Rawat' }, wa_id: '918587808715' },
-//             ],
-//             messages: [
-//               {
-//                 from: '918587805615',
-//                 id: 'wamid.HBgMOTE4NTg3ODA1NjE1FQIAEhggQjEwMjM1QzQyQUM4MEQ1MURCQjhBQjBFREFFMkQwM0MA',
-//                 timestamp: '1653161271',
-//                 text: { body: 'Thank you so much' },
-//                 type: 'text',
-//               },
-//             ],
-//           },
-//           field: 'messages',
-//         },
-//       ],
-//     },
-//   ],
-// };
-// const data = {
-//   object: 'whatsapp_business_account',
-//   entry: [
-//     {
-//       id: '1139607347569214',
-//       changes: [
-//         {
-//           value: {
-//             messaging_product: 'whatsapp',
-//             metadata: {
-//               display_phone_number: '916235982661',
-//               phone_number_id: '502595802947534',
-//             },
-//             contacts: [{ profile: { name: 'sh4nu' }, wa_id: '917012670512' }],
-//             messages: [
-//               {
-//                 context: {
-//                   from: '916235982661',
-//                   id: 'wamid.HBgMOTE3MDEyNjcwNTEyFQIAERgSRkMzN0ZBQTRDREJCMTU4QUZDAA==',
-//                 },
-//                 from: '917012670512',
-//                 id: 'wamid.HBgMOTE3MDEyNjcwNTEyFQIAEhgUM0E1MUYyRTg0RUEyQjNCNzQ1NDcA',
-//                 timestamp: '1741524954',
-//                 type: 'interactive',
-//                 interactive: {
-//                   type: 'button_reply',
-//                   button_reply: { id: 'hello-button', title: 'Hello' },
-//                 },
-//               },
-//             ],
-//           },
-//           field: 'messages',
-//         },
-//       ],
-//     },
-//   ],
-// };
+// const a = { 
+//   "object": "whatsapp_business_account", 
+//   "entry": [
+//     { "id": "1883543198870590", 
+//       "changes": [
+//         { 
+//           "value": { 
+//             "messaging_product": "whatsapp", 
+//             "metadata": { "display_phone_number": "917559903011", "phone_number_id": "769195252945723" }, 
+//             "contacts": [{ "profile": { "name": "sh4nu" }, "wa_id": "917012670512" }], 
+//             "messages": [
+//               { 
+//                 "context": { 
+//                   "from": "917559903011", 
+//                   "id": "wamid.HBgMOTE3MDEyNjcwNTEyFQIAERgSMTcwRjEzMTcyNzZGNDcyMjRCAA==" 
+//                 }, 
+//                 "from": "917012670512", 
+//                 "id": "wamid.HBgMOTE3MDEyNjcwNTEyFQIAEhgUM0FBQUE0QkZGOEM3RjRCRDhFNEYA", 
+//                 "timestamp": "1768399204", 
+//                 "type": "interactive", 
+//                 "interactive": { 
+//                   "type": "button_reply", 
+//                   "button_reply": { "id": "get-catlog", "title": "See Products" } 
+//                 } 
+//               }
+//             ] 
+//           }, 
+//         "field": "messages" }] }] }
+
 
 @Injectable()
 export class WhatsappService {
@@ -99,8 +59,7 @@ export class WhatsappService {
     if (!type) return 'This action only accepts text messages';
 
     if (type == 'interactive') {
-      const btnId =
-        data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
+      const btnId = data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
 
       if (btnId === 'get-catlog') {
         const phone = data.entry[0].changes[0].value.messages[0].from;
@@ -108,6 +67,10 @@ export class WhatsappService {
       }
 
       return 'This action only accepts text messages';
+    }
+
+    if(type === 'free_customer_service') {
+      return 'free_customer_service';
     }
 
     const message = data.entry[0].changes[0].value.messages[0].text.body;
@@ -197,6 +160,9 @@ export class WhatsappService {
         isDeleted: false,
       },
     });
+
+    console.log(products);
+    if(!products || products?.length === 0) return 'No products found';
 
     const productId = products.length > 0 ? products[Math.floor(Math.random() * products.length)].catalogId  : undefined;
     console.log(productId);
