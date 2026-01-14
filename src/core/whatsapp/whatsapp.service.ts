@@ -134,14 +134,8 @@ export class WhatsappService {
       type: 'interactive',
       interactive: {
         type: 'button',
-        header: {
-          type: 'image',
-          image: {
-            id: '26584478994487901',
-          },
-        },
         body: {
-          text: `ഹായ് ${name}!\n നിങ്ങളുടെ ക്രിയേറ്റീവ് സ്റ്റുഡിയോയിലേക്ക് സ്വാഗതം, ദയവായി ഞങ്ങളുടെ ഉൽപ്പന്നങ്ങൾ പരിശോധിക്കുക.\n\n നന്ദി!`,
+          text: `Hey ${name}!\n Welcome to Dfresh! \n Please checkout our catlog for the best deals!`,
         },
         footer: {
           text: 'Amshen Yesudas: Your gateway to creativity!™',
@@ -205,6 +199,7 @@ export class WhatsappService {
     });
 
     const productId = products.length > 0 ? products[Math.floor(Math.random() * products.length)].catalogId  : undefined;
+    console.log(productId);
     
     if(!productId) return 'No products found';
     
