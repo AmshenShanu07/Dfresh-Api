@@ -55,7 +55,7 @@ export class WhatsappService {
   async receiveMessage(data: ReceiveMessageDto) {
     
     
-    const type: string = data.entry[0]?.changes[0]?.value?.messages[0]?.type;
+    const type: string = data.entry[0]?.changes[0]?.value?.messages[0]?.type || '';
     
     if (!type) {
       return 'This action only accepts text messages'
