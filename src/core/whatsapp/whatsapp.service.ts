@@ -160,6 +160,7 @@ export class WhatsappService {
         isDeleted: false,
       },
       select: {
+        id: true,
         catalogId: true,
       }
     });
@@ -170,7 +171,7 @@ export class WhatsappService {
     const randomIndex = Math.floor(Math.random() * products.length);
     console.log(randomIndex, products.length);
     console.log(products[randomIndex]);
-    const productId = products[randomIndex].catalogId;
+    const productId = products[randomIndex].id;
     console.log(productId);
     
     if(!productId) {
