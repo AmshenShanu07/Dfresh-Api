@@ -164,10 +164,15 @@ export class WhatsappService {
     console.log(products);
     if(!products || products?.length === 0) return 'No products found';
 
-    const productId = products.length > 0 ? products[Math.floor(Math.random() * products.length)].catalogId  : undefined;
+    const randomIndex = Math.floor(Math.random() * products.length);
+    console.log(randomIndex, products.length);
+    const productId = products[randomIndex].catalogId;
     console.log(productId);
     
-    if(!productId) return 'No products found';
+    if(!productId) {
+      console.log('No product id found');
+      return 'No products found';
+    }
     
     const payload = {
       messaging_product: 'whatsapp',
@@ -210,8 +215,9 @@ export class WhatsappService {
   }
 
   async sendLog(log: string) {
-    console.log(this.botToken, this.tgChatId);
+    console.log('----------- LOGGING -----------');
     console.log(log);
+    console.log('----------- LOGGING -----------');
     try {
       await axios.post(
         `https://api.telegram.org/bot${this.botToken}/sendMessage`,
