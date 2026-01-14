@@ -53,37 +53,39 @@ export class WhatsappService {
   }
 
   async receiveMessage(data: ReceiveMessageDto) {
-    await this.sendLog(JSON.stringify(data));
+    try {
 
-    if(!data.entry[0]?.changes[0]?.value) {
-      return 'This action only accepts text messages';
-    }
-
-    const type: string = data.entry[0]?.changes[0]?.value?.messages[0]?.type || '';
-    
-    if (!type) {
-      return 'This action only accepts text messages'
-    };
-
-    if (type == 'interactive') {
-      const btnId = data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
-
-      if (btnId === 'get-catlog') {
-        const phone = data.entry[0].changes[0].value.messages[0].from;
-        return this.sendProduct(phone);
+      await this.sendLog(JSON.stringify(data));
+  
+      const type: string = data.entry[0]?.changes[0]?.value?.messages[0]?.type || '';
+      
+      if (!type) {
+        return 'This action only accepts text messages'
+      };
+  
+      if (type == 'interactive') {
+        const btnId = data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
+  
+        if (btnId === 'get-catlog') {
+          const phone = data.entry[0].changes[0].value.messages[0].from;
+          return this.sendProduct(phone);
+        }
+  
+        return 'This action only accepts text messages';
       }
-
+  
+  
+      const message = data.entry[0].changes[0].value.messages[0].text.body;
+      const name = data.entry[0].changes[0].value.contacts[0].profile.name;
+      const phone = data.entry[0].changes[0].value.messages[0].from;
+  
+      if (message === '/start') await this.sendWelcomeMessage(name, phone);
+  
+      return message;
+    } catch (error) {
+      // console.error(error);
       return 'This action only accepts text messages';
     }
-
-
-    const message = data.entry[0].changes[0].value.messages[0].text.body;
-    const name = data.entry[0].changes[0].value.contacts[0].profile.name;
-    const phone = data.entry[0].changes[0].value.messages[0].from;
-
-    if (message === '/start') await this.sendWelcomeMessage(name, phone);
-
-    return message;
   }
 
   verify() {
@@ -169,14 +171,10 @@ export class WhatsappService {
       }
     });
 
-    console.log(products);
     if(!products || products?.length === 0) return 'No products found';
 
     const randomIndex = Math.floor(Math.random() * products.length);
-    console.log(randomIndex, products.length);
-    console.log(products[randomIndex]);
     const productId = products[randomIndex].id;
-    console.log(productId);
     
     if(!productId) {
       console.log('No product id found');
