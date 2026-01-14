@@ -53,15 +53,17 @@ export class WhatsappService {
   }
 
   async receiveMessage(data: ReceiveMessageDto) {
+    await this.sendLog(JSON.stringify(data));
     
-    
+    if(data.entry[0]?.changes[0]?.value) {
+      return 'This action only accepts text messages';
+    }
+
     const type: string = data.entry[0]?.changes[0]?.value?.messages[0]?.type || '';
     
     if (!type) {
       return 'This action only accepts text messages'
     };
-
-    await this.sendLog(JSON.stringify(data));
 
     if (type == 'interactive') {
       const btnId = data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
