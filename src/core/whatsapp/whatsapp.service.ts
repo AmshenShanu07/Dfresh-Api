@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { ReceiveMessageDto } from './dto/receive-message.dto';
-import { UserTypes } from '@prisma/client';
+import { OrderStatus, UserTypes } from '@prisma/client';
 import { PrismaService } from 'src/services/prisma.service';
 
 
@@ -43,12 +43,27 @@ export class WhatsappService {
       };
   
       if (type == 'interactive') {
-        const btnId = data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
-  
-        if (btnId === 'get-catlog') {
-          const phone = data.entry[0].changes[0].value.messages[0].from;
-          return this.sendProduct(phone);
+
+        const intrativeType = data.entry[0].changes[0].value.messages[0].interactive.type;
+
+
+
+        if(intrativeType === 'button_reply') {
+          const btnId = data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
+          
+          if (btnId === 'get-catlog') {
+            const phone = data.entry[0].changes[0].value.messages[0].from;
+            return this.sendProduct(phone);
+          }
+
+        } else if(intrativeType === 'nfm_reply') {
+          return this.receiveAddress(
+            data.entry[0].changes[0].value.messages[0].from, 
+            data.entry[0].changes[0].value.messages[0].interactive.nfm_reply.response_json
+          );
         }
+
+  
   
         return 'This action only accepts text messages';
       }
@@ -252,7 +267,7 @@ export class WhatsappService {
     if(!order) return 'Order not created';
     console.log('order',products);
 
-    await Promise.all(products.map((product) => {
+    const orderItems = await Promise.all(products.map((product) => {
       return this.prismaService.orderItems.create({
         data: {
           orderId: order.id,
@@ -261,10 +276,24 @@ export class WhatsappService {
           price: parseFloat(product.item_price),
           totalPrice: parseFloat(product.item_price) * parseFloat(product.quantity),
         },
+        select: {
+          id: true,
+          quantity: true,
+          price: true,
+          totalPrice: true,
+          product: {
+            select: {
+              name: true,
+            }
+          }
+        }
       });
     }))
 
-    if(user.UserAddress.length > 0) {
+    console.log('user', user.UserAddress);
+
+    if(user.UserAddress.length == 0) {
+
       const payload = {
         messaging_product: 'whatsapp',
         to: phone,
@@ -287,13 +316,16 @@ export class WhatsappService {
 
       console.log('Message sent:', response.data);
     } else {
+
       const replyText = ` 
-      ${products.map((product) => `${product.product_name} - ${product.quantity} - ${product.item_price}`).join('\n')}
+Your Order For: 
+
+${orderItems.map((item) => `${item.product.name} - ${item.quantity} Kg - Rs.${item.price}`).join('\n')}
       
-      Total Amount: ${order.totalAmount}
-      
-      Thank you for your order!
-      `;
+Total Amount: ${order.totalAmount}
+
+Thank you for your order!
+`;
 
       const payload = {
         messaging_product: 'whatsapp',
@@ -313,5 +345,55 @@ export class WhatsappService {
 
 
     return 'Order created successfully';
+  }
+
+  async receiveAddress(phone: string, address: string) {
+    const user = await this.prismaService.user.findFirst({
+      where: {
+        phone: phone,
+        userType: UserTypes.CUSTOMER,
+      },
+    });
+
+    const addressData = JSON.parse(address);
+
+    console.log('addressData', addressData);
+
+    await this.prismaService.userAddress.create({
+      data: {
+        userId: user.id,
+        name: addressData.name,
+        address: addressData.address,
+        pinCode: addressData.pinCode,
+        phone: phone,
+      },
+    });
+
+    const latestOrder = await this.prismaService.orderDetails.findFirst({
+      where: {
+        userId: user.id,
+        status: OrderStatus.PENDING,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    if(latestOrder) {
+      const deliveryDetails = await this.prismaService.deliveryDetails.create({
+        data: {
+          orderId: latestOrder.id,
+          address: addressData.address,
+          pinCode: addressData.pinCode,
+          phone: phone,
+          name: addressData.name,
+        },
+      });
+
+      await this.prismaService.orderDetails.update({
+        where: { id: latestOrder.id },
+        data: { status: OrderStatus.DELIVERED },
+      });
+    }
   }
 }
