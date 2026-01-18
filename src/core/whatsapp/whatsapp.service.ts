@@ -361,41 +361,46 @@ Thank you for your order!
 
     console.log('addressData', addressData);
 
-    await this.prismaService.userAddress.create({
+    await this.prismaService.deliveryDetails.create({
       data: {
-        userId: user.id,
-        name: addressData.name,
+        orderId: addressData.flow_token,
         address: addressData.address,
-        pinCode: addressData.pinCode,
-        phone: phone,
+        pinCode: addressData.pincode,
+        phone: addressData.phone,  
+        name: addressData.name,
       },
     });
 
-    const latestOrder = await this.prismaService.orderDetails.findFirst({
-      where: {
-        userId: user.id,
-        status: OrderStatus.PENDING,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-
-    if(latestOrder) {
-      const deliveryDetails = await this.prismaService.deliveryDetails.create({
-        data: {
-          orderId: latestOrder.id,
-          address: addressData.address,
-          pinCode: addressData.pinCode,
-          phone: phone,
-          name: addressData.name,
+    const order = await this.prismaService.orderDetails.findFirst({
+      where: { id: addressData.flow_token },
+      select: {
+        id: true,
+        totalAmount: true,
+        orderItems: {
+          select: {
+            id: true,
+            quantity: true,
+            price: true,
+          }
         },
-      });
+        deliveryDetails: {
+          select: {
+            id: true,
+            address: true,
+            pinCode: true,
+            phone: true,
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+          }
+        }
+      }
+    });
 
-      await this.prismaService.orderDetails.update({
-        where: { id: latestOrder.id },
-        data: { status: OrderStatus.DELIVERED },
-      });
-    }
+    console.log('orderDetails', order);
   }
 }
