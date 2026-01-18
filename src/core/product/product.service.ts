@@ -100,4 +100,23 @@ export class ProductService {;
   hardDelete(id: string) {
     return this.prismaService.products.delete({ where: { id } });
   }
+
+  async getRandomProductId() {
+    const products = await this.prismaService.products.findMany({
+      where: {
+        isActive: true,
+        isDeleted: false,
+      },
+      select: {
+        id: true,
+      }
+    });
+
+    if(!products || products?.length === 0) return null;
+
+    const randomIndex = Math.floor(Math.random() * products.length);
+    const productId = products[randomIndex].id;
+
+    return productId;
+  }
 }

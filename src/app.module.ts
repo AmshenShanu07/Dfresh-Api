@@ -10,6 +10,7 @@ import { ConfigModule } from '@nestjs/config';
 import { WhatsappModule } from './core/whatsapp/whatsapp.module';
 import { ShareCatlaogModule } from './core/share-catlaog/share-catlaog.module';
 import { UploadModule } from './core/upload/upload.module';
+import { OrderModule } from './core/order/order.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { UploadModule } from './core/upload/upload.module';
     WhatsappModule,
     ShareCatlaogModule,
     UploadModule,
+    OrderModule,
   ],
 })
 export class AppModule {}
