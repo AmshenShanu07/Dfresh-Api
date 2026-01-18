@@ -47,7 +47,7 @@ jobs:
           script: |
             cd ${{ secrets.APP_PATH }}
             rm -rf dist
-            npx prisma generate
             tar -xzf /tmp/build.tar.gz -C .
             pm2 kill
+            npx prisma generate
             pm2 start "node --max-old-space-size=2048 ./dist/main.js" --name api

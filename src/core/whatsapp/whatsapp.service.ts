@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import { ReceiveMessageDto } from './dto/receive-message.dto';
-import { Products, UserTypes } from '@prisma/client';
+import { UserTypes } from '@prisma/client';
 import { PrismaService } from 'src/services/prisma.service';
 
 
@@ -12,6 +12,7 @@ export class WhatsappService {
   private readonly tgChatId: string;
   private readonly waPhoneNumberId: string;
   private readonly waUserToken: string;
+  private readonly waInstance: AxiosInstance;
 
   constructor(
     private prismaService: PrismaService,
@@ -21,6 +22,13 @@ export class WhatsappService {
     this.tgChatId = this.configService.get<string>('TG_CHAT_ID');
     this.waPhoneNumberId = this.configService.get<string>('WA_PHONE_NUMBER_ID');
     this.waUserToken = this.configService.get<string>('WA_USER_TOKEN');
+    this.waInstance = axios.create({
+      baseURL: `https://graph.facebook.com/v22.0/${this.waPhoneNumberId}`,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.waUserToken}`,
+      },
+    });
   }
 
   async receiveMessage(data: ReceiveMessageDto) {
@@ -125,12 +133,7 @@ export class WhatsappService {
         });
       }
 
-      const response = await axios.post(url, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.waUserToken}`,
-        },
-      });
+      const response = await this.waInstance.post('/messages', payload);
 
       console.log('Message sent:', response.data);
     } catch (error) {
@@ -142,8 +145,6 @@ export class WhatsappService {
   }
 
   async sendProduct(phone: string) {
-    const url = `https://graph.facebook.com/v22.0/${this.waPhoneNumberId}/messages`;
-
     const products = await this.prismaService.products.findMany({
       where: {
         isActive: true,
@@ -188,12 +189,7 @@ export class WhatsappService {
     };
 
     try {
-      const response = await axios.post(url, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.waUserToken}`,
-        },
-      });
+      const response = await this.waInstance.post('/messages', payload);
 
       console.log('Message sent:', response.data);
     } catch (error) {
@@ -230,6 +226,18 @@ export class WhatsappService {
         phone: phone,
         userType: UserTypes.CUSTOMER,
       },
+      select: {
+        id: true,
+        UserAddress: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            address: true,
+            pinCode: true,
+          }
+        },
+      }
     });
 
     if(!user) return 'User not found';
@@ -254,11 +262,55 @@ export class WhatsappService {
           totalPrice: parseFloat(product.item_price) * parseFloat(product.quantity),
         },
       });
-    })).then((d) => {
-      console.log('order items',d);
-    }).catch((e) => {
-      console.log('order item error',e);
-    });
+    }))
+
+    if(user.UserAddress.length > 0) {
+      const payload = {
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'interactive',
+        interactive: {
+          type: 'flow',
+        },
+        body: {
+          text: 'Please share your delivery address',
+        },
+        action: {
+          name: 'flow',
+          parameters: {
+            flow_message_version: '3',
+          },
+        },
+      };
+
+      const response = await this.waInstance.post('/messages', payload);
+
+      console.log('Message sent:', response.data);
+    } else {
+      const replyText = ` 
+      ${products.map((product) => `${product.product_name} - ${product.quantity} - ${product.item_price}`).join('\n')}
+      
+      Total Amount: ${order.totalAmount}
+      
+      Thank you for your order!
+      `;
+
+      const payload = {
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: {
+          body: replyText,
+        },
+      };
+      
+      const response = await this.waInstance.post('/messages', payload);
+
+      console.log('Message sent:', response.data);
+    }
+
+
+
 
     return 'Order created successfully';
   }
