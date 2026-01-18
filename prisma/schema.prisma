@@ -18,6 +18,19 @@ model User {
   address     String?    @default("")
   Purchase    Purchase[]
   OutletAgent Staff[]
+  UserAddress UserAddress[]
+  OrderDetails OrderDetails[]
+}
+
+model UserAddress {
+  id        String     @id @default(cuid())
+  userId    String
+  name      String     @default("")
+  address   String     @default("")
+  pinCode   String     @default("")
+  phone     String     @default("")
+  createdAt DateTime   @default(now())
+  user      User       @relation(fields: [userId], references: [id])
 }
 
 model Category {
@@ -44,6 +57,7 @@ model Products {
   Purchase             Purchase[]
   ShareCatalogProducts ShareCatalogProducts[]
   Outlets              Outlets[]              @relation("OutletsToProducts")
+  OrderItems           OrderItems[]
 }
 
 model Purchase {
@@ -169,4 +183,49 @@ enum UserTypes {
 enum ProductUnits {
   KG
   G
+}
+
+
+model OrderDetails {
+  id                String @id @default(cuid())
+  userId            String
+  totalAmount       Float
+  status            OrderStatus @default(PENDING)
+  deliveryDetails   DeliveryDetails? @relation("OrderToDelivery")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  orderItems        OrderItems[]
+  user              User @relation(fields: [userId], references: [id])
+}
+
+enum OrderStatus {
+  PENDING
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
+model OrderItems {
+  id          String @id @default(cuid())
+  orderId     String
+  productId   String
+  product     Products @relation(fields: [productId], references: [id])
+  quantity    Float
+  price       Float
+  totalPrice  Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  order       OrderDetails @relation(fields: [orderId], references: [id])
+}
+
+model DeliveryDetails {
+  id            String @id @default(cuid())
+  address       String
+  phone         String
+  pinCode       String
+  name          String
+  orderId       String  @unique
+  order         OrderDetails @relation("OrderToDelivery", fields: [orderId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

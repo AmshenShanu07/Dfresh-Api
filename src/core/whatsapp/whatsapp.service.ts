@@ -5,35 +5,6 @@ import { ReceiveMessageDto } from './dto/receive-message.dto';
 import { Products, UserTypes } from '@prisma/client';
 import { PrismaService } from 'src/services/prisma.service';
 
-// const a = { 
-//   "object": "whatsapp_business_account", 
-//   "entry": [
-//     { "id": "1883543198870590", 
-//       "changes": [
-//         { 
-//           "value": { 
-//             "messaging_product": "whatsapp", 
-//             "metadata": { "display_phone_number": "917559903011", "phone_number_id": "769195252945723" }, 
-//             "contacts": [{ "profile": { "name": "sh4nu" }, "wa_id": "917012670512" }], 
-//             "messages": [
-//               { 
-//                 "context": { 
-//                   "from": "917559903011", 
-//                   "id": "wamid.HBgMOTE3MDEyNjcwNTEyFQIAERgSMTcwRjEzMTcyNzZGNDcyMjRCAA==" 
-//                 }, 
-//                 "from": "917012670512", 
-//                 "id": "wamid.HBgMOTE3MDEyNjcwNTEyFQIAEhgUM0FBQUE0QkZGOEM3RjRCRDhFNEYA", 
-//                 "timestamp": "1768399204", 
-//                 "type": "interactive", 
-//                 "interactive": { 
-//                   "type": "button_reply", 
-//                   "button_reply": { "id": "get-catlog", "title": "See Products" } 
-//                 } 
-//               }
-//             ] 
-//           }, 
-//         "field": "messages" }] }] }
-
 
 @Injectable()
 export class WhatsappService {
@@ -73,6 +44,9 @@ export class WhatsappService {
   
         return 'This action only accepts text messages';
       }
+
+
+
   
   
       const message = data.entry[0].changes[0].value.messages[0].text.body;
@@ -240,7 +214,37 @@ export class WhatsappService {
     }
   }
 
-  async addProduct(prduct: Products){
+  async createOrder(phone: string, products: any[]){
+    const user = await this.prismaService.user.findFirst({
+      where: {
+        phone: phone,
+        userType: UserTypes.CUSTOMER,
+      },
+    });
 
+    if(!user) return 'User not found';
+
+    const order = await this.prismaService.orderDetails.create({
+      data: {
+        userId: user.id,
+        totalAmount: products.reduce((acc, product) => acc + product.item_price * product.quantity, 0),
+      },
+    });
+
+    if(!order) return 'Order not created';
+
+    await Promise.all(products.map(async (product) => {
+      this.prismaService.orderItems.create({
+        data: {
+          orderId: order.id,
+          productId: product.product_retailer_id,
+          quantity: product.quantity,
+          price: product.item_price,
+          totalPrice: product.item_price * product.quantity,
+        },
+      });
+    }));
+
+    return 'Order created successfully';
   }
 }
