@@ -57,6 +57,7 @@ export class WhatsappService {
           }
 
         } else if(intrativeType === 'nfm_reply') {
+          console.log('address', data.entry[0].changes[0].value.messages[0].interactive.nfm_reply.response_json);
           return this.receiveAddress(
             data.entry[0].changes[0].value.messages[0].from, 
             data.entry[0].changes[0].value.messages[0].interactive.nfm_reply.response_json
@@ -295,22 +296,23 @@ export class WhatsappService {
     if(user.UserAddress.length == 0) {
 
       const payload = {
-        messaging_product: 'whatsapp',
-        to: phone,
-        type: 'interactive',
-        interactive: {
-          type: 'flow',
-        },
-        body: {
-          text: 'Please share your delivery address',
-        },
-        action: {
-          name: 'flow',
-          parameters: {
-            flow_message_version: '3',
-          },
-        },
-      };
+        "messaging_product":"whatsapp",
+        "to":phone,
+        "type":"interactive",
+        "interactive":{
+          "type":"flow",
+          "body":{"text":"Please share your delivery address"},
+          "action":{
+            "name":"flow",
+            "parameters":{
+              "flow_message_version":"3",
+              "flow_id":"902959149367544",
+              "flow_cta":"Enter Address",
+              "flow_token":order.id
+            }
+          }
+        }
+      }
 
       const response = await this.waInstance.post('/messages', payload);
 
