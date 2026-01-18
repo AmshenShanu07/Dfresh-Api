@@ -15,6 +15,35 @@ export class ShareCatlaogService {
 
   async create(createShareCatlaogDto: CreateShareCatlaogDto) {
 
+    const currectCatlog = await this.prismaService.shareCatalog.findFirst({
+      where: {
+        isActive: true,
+        isDeleted: false,
+      },
+      select: {
+        ShareCatalogProducts: {
+          select: {
+            productId: true,
+            productCatalogId: true,
+          }
+        }
+      }
+    })
+
+    await Promise.all(currectCatlog.ShareCatalogProducts.map((product) => {
+      return this.catalogService.updateProduct(product.productCatalogId, { availability: "out of stock" })
+    }))
+
+    await this.prismaService.shareCatalog.updateMany({
+      where: {
+        isActive: true,
+        isDeleted: false,
+      },
+      data: {
+        isActive: false,
+      }
+    })
+
     const productsList = await this.prismaService.products.findMany({
       where: {
         id: {

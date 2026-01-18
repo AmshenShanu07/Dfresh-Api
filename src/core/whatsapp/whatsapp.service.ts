@@ -45,8 +45,9 @@ export class WhatsappService {
         return 'This action only accepts text messages';
       }
 
+      console.log('order',data.entry[0].changes[0].value.messages[0].order);
       if(type == 'order') {
-        // {"object":"whatsapp_business_account","entry":[{"id":"1883543198870590","changes":[{"value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"917559903011","phone_number_id":"769195252945723"},"contacts":[{"profile":{"name":"sh4nu"},"wa_id":"917012670512"}],"messages":[{"from":"917012670512","id":"wamid.HBgMOTE3MDEyNjcwNTEyFQIAEhgUM0FEODI1RTM0NkZFQ0E5NUU3OUQA","timestamp":"1768724525","type":"order","order":{"catalog_id":"1978442546302613","text":"","product_items":[{"product_retailer_id":"cmk9dpnel0005ufrl14mn4c7l","quantity":1,"item_price":1,"currency":"INR"},{"product_retailer_id":"cmk9dmwzi0001ufrlnzf52jc1","quantity":1,"item_price":5,"currency":"INR"},{"product_retailer_id":"cmk9dr1hv0007ufrlqf4mayq6","quantity":1,"item_price":7.5,"currency":"INR"}]}}]},"field":"messages"}]}]}
+        console.log(data.entry[0].changes[0].value.messages[0].order);
         await this.createOrder(
           data.entry[0].changes[0].value.messages[0].from, 
           data.entry[0].changes[0].value.messages[0].order.product_items
@@ -236,23 +237,28 @@ export class WhatsappService {
     const order = await this.prismaService.orderDetails.create({
       data: {
         userId: user.id,
-        totalAmount: products.reduce((acc, product) => acc + product.item_price * product.quantity, 0),
+        totalAmount: products.reduce((acc, product) => acc + parseFloat(product.item_price) * parseFloat(product.quantity), 0),
       },
     });
 
     if(!order) return 'Order not created';
+    console.log('order',products);
 
-    await Promise.all(products.map(async (product) => {
-      this.prismaService.orderItems.create({
+    await Promise.all(products.map((product) => {
+      return this.prismaService.orderItems.create({
         data: {
           orderId: order.id,
           productId: product.product_retailer_id,
-          quantity: product.quantity,
-          price: product.item_price,
-          totalPrice: product.item_price * product.quantity,
+          quantity: parseFloat(product.quantity),
+          price: parseFloat(product.item_price),
+          totalPrice: parseFloat(product.item_price) * parseFloat(product.quantity),
         },
       });
-    }));
+    })).then((d) => {
+      console.log('order items',d);
+    }).catch((e) => {
+      console.log('order item error',e);
+    });
 
     return 'Order created successfully';
   }
