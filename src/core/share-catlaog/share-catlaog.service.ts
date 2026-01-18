@@ -140,7 +140,7 @@ export class ShareCatlaogService {
   }
 
   update(id: string, updateShareCatlaogDto: UpdateShareCatlaogDto) {
-    return { id, ...updateShareCatlaogDto };
+    return { id, ...updateShareCatlaogDto }
   }
 
   remove(id: string) {
