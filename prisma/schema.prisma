@@ -8,18 +8,18 @@ datasource db {
 }
 
 model User {
-  id          String     @id @default(cuid())
-  name        String
-  phone       String     @unique
-  password    String
-  userType    UserTypes  @default(CUSTOMER)
-  email       String?    @default("")
-  createdAt   DateTime   @default(now())
-  address     String?    @default("")
-  Purchase    Purchase[]
-  OutletAgent Staff[]
-  UserAddress UserAddress[]
-  OrderDetails OrderDetails[]
+  id            String     @id @default(cuid())
+  name          String
+  phone         String     @unique
+  password      String
+  userType      UserTypes  @default(CUSTOMER)
+  email         String?    @default("")
+  createdAt     DateTime   @default(now())
+  address       String?    @default("")
+  Purchase      Purchase[]
+  OutletAgent   Staff[]
+  UserAddress   UserAddress[]
+  OrderDetails  OrderDetails[]
 }
 
 model UserAddress {
@@ -34,12 +34,12 @@ model UserAddress {
 }
 
 model Category {
-  id        String     @id @default(cuid())
-  name      String
-  isActive  Boolean    @default(true)
-  isDeleted Boolean    @default(false)
-  createdAt DateTime   @default(now())
-  Products  Products[]
+  id          String     @id @default(cuid())
+  name        String
+  isActive    Boolean    @default(true)
+  isDeleted   Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  Products    Products[]
 }
 
 model Products {
@@ -121,17 +121,17 @@ model ShareCatalog {
 }
 
 model ShareCatalogProducts {
-  id             String       @id @default(cuid())
-  shareCatalogId String
-  productCatalogId String     @default("")
-  productId      String
-  qnty           Float
-  qntyUnit       ProductUnits
-  price          Float
-  createdAt      DateTime     @default(now())
-  product        Products     @relation(fields: [productId], references: [id])
-  shareCatalog   ShareCatalog @relation(fields: [shareCatalogId], references: [id])
-  Catalog        Catalog[]    @relation("CatalogToShareCatalogProducts")
+  id                  String       @id @default(cuid())
+  shareCatalogId      String
+  productCatalogId    String     @default("")
+  productId           String
+  qnty                Float
+  qntyUnit            ProductUnits
+  price               Float
+  createdAt           DateTime     @default(now())
+  product             Products     @relation(fields: [productId], references: [id])
+  shareCatalog        ShareCatalog @relation(fields: [shareCatalogId], references: [id])
+  Catalog             Catalog[]    @relation("CatalogToShareCatalogProducts")
 }
 
 model Outlets {

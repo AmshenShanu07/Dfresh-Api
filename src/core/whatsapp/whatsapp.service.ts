@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { ReceiveMessageDto } from './dto/receive-message.dto';
-import { OrderStatus, UserTypes } from '@prisma/client';
+import { UserTypes } from '@prisma/client';
 import { PrismaService } from 'src/services/prisma.service';
 
 
@@ -45,6 +45,7 @@ export class WhatsappService {
       if (type == 'interactive') {
 
         const intrativeType = data.entry[0].changes[0].value.messages[0].interactive.type;
+        const phone = data.entry[0].changes[0].value.messages[0].from;
 
 
 
@@ -52,24 +53,18 @@ export class WhatsappService {
           const btnId = data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
           
           if (btnId === 'get-catlog') {
-            const phone = data.entry[0].changes[0].value.messages[0].from;
             return this.sendProduct(phone);
           }
 
         } else if(intrativeType === 'nfm_reply') {
-          console.log('address', data.entry[0].changes[0].value.messages[0].interactive.nfm_reply.response_json);
-          return this.receiveAddress(
-            data.entry[0].changes[0].value.messages[0].from, 
-            data.entry[0].changes[0].value.messages[0].interactive.nfm_reply.response_json
-          );
+          //Address Flow Response
+          const formData = data.entry[0].changes[0].value.messages[0].interactive.nfm_reply.response_json;
+          return this.receiveAddress(phone, formData);
+
         }
 
-  
-  
-        return 'This action only accepts text messages';
       }
 
-      console.log('order',data.entry[0].changes[0].value.messages[0].order);
       if(type == 'order') {
         console.log(data.entry[0].changes[0].value.messages[0].order);
         await this.createOrder(
@@ -87,9 +82,9 @@ export class WhatsappService {
       const name = data.entry[0].changes[0].value.contacts[0].profile.name;
       const phone = data.entry[0].changes[0].value.messages[0].from;
   
-      if (message === '/start') await this.sendWelcomeMessage(name, phone);
+      if (message.toLowerCase() === 'start') 
+          return this.sendWelcomeMessage(name, phone);
   
-      return message;
     } catch (error) {
       // console.error(error);
       return 'This action only accepts text messages';
@@ -101,7 +96,6 @@ export class WhatsappService {
   }
 
   async sendWelcomeMessage(name: string, phone: string) {
-    const url = `https://graph.facebook.com/v22.0/${this.waPhoneNumberId}/messages`;
     console.log(this.waUserToken, this.waPhoneNumberId, phone, name);
 
     const payload = {
@@ -115,7 +109,7 @@ export class WhatsappService {
           text: `Hey ${name}!\nWelcome to Dfresh! \nPlease checkout our catlog for the best deals!`,
         },
         footer: {
-          text: 'Amshen Yesudas: Your gateway to creativity!™',
+          text: 'Fresh to home™',
         },
         action: {
           buttons: [
@@ -190,17 +184,17 @@ export class WhatsappService {
       interactive: {
         type: 'catalog_message',
         body: {
-          text: 'ഹലോ! താൽപ്പര്യത്തിന് നന്ദി. ഓർഡർ ചെയ്യുന്നത് എളുപ്പമാണ്. ഞങ്ങളുടെ കാറ്റലോഗ് സന്ദർശിച്ച് വാങ്ങാൻ ഇനങ്ങൾ ചേർക്കുക.',
+          text: 'Hey! Thank you for your interest. It\'s easy to order from our catalog. Please check our catalog and add items to your order.',
+        },
+        footer: {
+          text: 'Fresh to home™',
         },
         action: {
           name: 'catalog_message',
           parameters: {
             thumbnail_product_retailer_id: productId
           },
-        },
-        footer: {
-          text: 'Best grocery deals on WhatsApp!',
-        },
+        }
       },
     };
 
@@ -268,7 +262,7 @@ export class WhatsappService {
     if(!order) return 'Order not created';
     console.log('order',products);
 
-    const orderItems = await Promise.all(products.map((product) => {
+    await Promise.all(products.map((product) => {
       return this.prismaService.orderItems.create({
         data: {
           orderId: order.id,
@@ -294,23 +288,24 @@ export class WhatsappService {
     console.log('user', user.UserAddress);
 
     const payload = {
-      "messaging_product":"whatsapp",
-      "to":phone,
-      "type":"interactive",
-      "interactive":{
-        "type":"flow",
-        "body":{"text":"Please share your delivery address"},
-        "action":{
-          "name":"flow",
-          "parameters":{
-            "flow_message_version":"3",
-            "flow_id":"902959149367544",
-            "flow_cta":"Enter Address",
-            "flow_token":order.id
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'flow',
+        body: { text: 'Please share your delivery address' },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          name: "flow",
+          parameters: {
+            flow_message_version: "3",
+            flow_id: "902959149367544",
+            flow_cta: "Enter Address",
+            flow_token: order.id
           }
         }
-      }
-    }
+      },
+    };
 
     const response = await this.waInstance.post('/messages', payload);
 
@@ -360,6 +355,7 @@ export class WhatsappService {
       messaging_product: 'whatsapp',
       to: phone,
       type: 'text',
+      footer: { text: 'Fresh to home™' },
       text: {
         body: `Your order has been confirmed successfully.
 
