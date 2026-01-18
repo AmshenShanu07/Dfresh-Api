@@ -112,7 +112,7 @@ export class WhatsappService {
       interactive: {
         type: 'button',
         body: {
-          text: `Hey ${name}!\n Welcome to Dfresh! \n Please checkout our catlog for the best deals!`,
+          text: `Hey ${name}!\nWelcome to Dfresh! \nPlease checkout our catlog for the best deals!`,
         },
         footer: {
           text: 'Amshen Yesudas: Your gateway to creativity!™',
@@ -293,83 +293,37 @@ export class WhatsappService {
 
     console.log('user', user.UserAddress);
 
-    if(user.UserAddress.length == 0) {
-
-      const payload = {
-        "messaging_product":"whatsapp",
-        "to":phone,
-        "type":"interactive",
-        "interactive":{
-          "type":"flow",
-          "body":{"text":"Please share your delivery address"},
-          "action":{
-            "name":"flow",
-            "parameters":{
-              "flow_message_version":"3",
-              "flow_id":"902959149367544",
-              "flow_cta":"Enter Address",
-              "flow_token":order.id
-            }
+    const payload = {
+      "messaging_product":"whatsapp",
+      "to":phone,
+      "type":"interactive",
+      "interactive":{
+        "type":"flow",
+        "body":{"text":"Please share your delivery address"},
+        "action":{
+          "name":"flow",
+          "parameters":{
+            "flow_message_version":"3",
+            "flow_id":"902959149367544",
+            "flow_cta":"Enter Address",
+            "flow_token":order.id
           }
         }
       }
-
-      const response = await this.waInstance.post('/messages', payload);
-
-      console.log('Message sent:', response.data);
-    } else {
-
-      const replyText = ` 
-Your Order For: 
-
-${orderItems.map((item) => `${item.product.name} - ${item.quantity} Kg - Rs.${item.price}`).join('\n')}
-      
-Total Amount: ${order.totalAmount}
-
-Thank you for your order!
-`;
-
-      const payload = {
-        messaging_product: 'whatsapp',
-        to: phone,
-        type: 'text',
-        text: {
-          body: replyText,
-        },
-      };
-      
-      const response = await this.waInstance.post('/messages', payload);
-
-      console.log('Message sent:', response.data);
     }
 
+    const response = await this.waInstance.post('/messages', payload);
 
-
+    console.log('Message sent:', response.data);
 
     return 'Order created successfully';
   }
 
   async receiveAddress(phone: string, address: string) {
-    const user = await this.prismaService.user.findFirst({
-      where: {
-        phone: phone,
-        userType: UserTypes.CUSTOMER,
-      },
-    });
 
     const addressData = JSON.parse(address);
 
     console.log('addressData', addressData);
-
-    await this.prismaService.deliveryDetails.create({
-      data: {
-        orderId: addressData.flow_token,
-        address: addressData.address,
-        pinCode: addressData.pincode,
-        phone: addressData.phone,  
-        name: addressData.name,
-      },
-    });
 
     const order = await this.prismaService.orderDetails.findFirst({
       where: { id: addressData.flow_token },
@@ -381,26 +335,43 @@ Thank you for your order!
             id: true,
             quantity: true,
             price: true,
-          }
-        },
-        deliveryDetails: {
-          select: {
-            id: true,
-            address: true,
-            pinCode: true,
-            phone: true,
-          }
-        },
-        user: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
+            product: {
+              select: {
+                name: true,
+              }
+            }
           }
         }
       }
     });
 
-    console.log('orderDetails', order);
+    await this.prismaService.deliveryDetails.create({
+      data: {
+        orderId: addressData.flow_token,
+        address: addressData.address,
+        pinCode: addressData.pincode,
+        phone: addressData.phone,  
+        name: addressData.name,
+      },
+    });
+    
+
+    this.waInstance.post('/messages', {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'text',
+      text: {
+        body: `Your order has been confirmed successfully.
+
+Your order details:
+
+${order.orderItems.map((item) => `${item.product.name} - ${item.quantity} Kg - Rs.${item.price}`).join('\n')}
+
+Total Amount: ${order.totalAmount}
+
+Thank you for your order!`,
+      },
+    });
+
   }
 }

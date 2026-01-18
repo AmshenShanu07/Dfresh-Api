@@ -200,6 +200,7 @@ model OrderDetails {
 
 enum OrderStatus {
   PENDING
+  CONFIRMED
   DISPATCHED
   DELIVERED
   CANCELLED
