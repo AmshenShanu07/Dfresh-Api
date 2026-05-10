@@ -8,23 +8,30 @@ import { LoginDto } from './dto/login.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
-import { PrismaService } from 'src/services/prisma.service';
 import { UserTypeDto } from './dto/user-type.dto';
 import { JwtService } from '@nestjs/jwt';
-import { UserTypes } from '@prisma/client';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Not } from 'typeorm';
+import { User } from './entities/user.entity';
+import { Staff } from './entities/staff.entity';
+import { Outlets } from '../outlet/entities/outlet.entity';
+import { UserTypes } from 'src/common/enums';
 
 @Injectable()
 export class UsersService {
   constructor(
-    private prismaService: PrismaService,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
+    @InjectRepository(Staff)
+    private staffRepository: Repository<Staff>,
+    @InjectRepository(Outlets)
+    private outletRepository: Repository<Outlets>,
     private jwtService: JwtService,
   ) {}
 
   async create(createUserDto: CreateUserDto) {
-    const isExist = await this.prismaService.user.findFirst({
-      where: {
-        phone: createUserDto.phone,
-      },
+    const isExist = await this.userRepository.findOne({
+      where: { phone: createUserDto.phone },
     });
 
     if (isExist !== null) {
@@ -32,24 +39,23 @@ export class UsersService {
     }
 
     const password = await bcrypt.hash(createUserDto.password, 10);
-    createUserDto.password = password;
 
-    return this.prismaService.user.create({
-      data: {
-        name: createUserDto.name,
-        phone: createUserDto.phone,
-        password: createUserDto.password,
-        userType: createUserDto.userType,
-        address: createUserDto.address,
-      },
+    const user = this.userRepository.create({
+      name: createUserDto.name,
+      phone: createUserDto.phone,
+      password,
+      userType: createUserDto.userType,
+      address: createUserDto.address,
     });
+
+    return this.userRepository.save(user);
   }
 
   async login(data: LoginDto) {
-    const isExist = await this.prismaService.user.findFirst({
+    const isExist = await this.userRepository.findOne({
       where: {
         phone: data.phone,
-        userType: { not: UserTypes.CUSTOMER },
+        userType: Not(UserTypes.CUSTOMER),
       },
     });
 
@@ -60,10 +66,7 @@ export class UsersService {
     const comparePswd = await bcrypt.compare(data.password, isExist.password);
 
     const token = await this.jwtService.sign(
-      {
-        id: isExist.id,
-        phone: isExist.phone,
-      },
+      { id: isExist.id, phone: isExist.phone },
       { secret: 'dfresh' },
     );
 
@@ -78,54 +81,35 @@ export class UsersService {
   }
 
   findAll() {
-    return this.prismaService.user.findMany({});
+    return this.userRepository.find();
   }
 
   findOne(id: string) {
-    return this.prismaService.user.findFirst({
-      where: {
-        id: id,
-      },
-      include: {
-        OutletAgent: {
-          include: {
-            outlet: true,
-          },
-        },
-      },
+    return this.userRepository.findOne({
+      where: { id },
+      relations: { outletAgent: { outlet: true } },
     });
   }
 
   findByUserType(userType: UserTypeDto) {
-    return this.prismaService.user.findMany({
-      where: {
-        userType: userType.userType,
-      },
+    return this.userRepository.find({
+      where: { userType: userType.userType },
     });
   }
 
-  update(id: string, updateUserDto: UpdateUserDto) {
-    return this.prismaService.user.update({
-      where: {
-        id: id,
-      },
-      data: updateUserDto,
-    });
+  async update(id: string, updateUserDto: UpdateUserDto) {
+    await this.userRepository.update(id, updateUserDto);
+    return this.userRepository.findOne({ where: { id } });
   }
 
-  remove(id: string) {
-    return this.prismaService.user.delete({
-      where: {
-        id: id,
-      },
-    });
+  async remove(id: string) {
+    await this.userRepository.delete(id);
+    return { id };
   }
 
   async createStaff(data: CreateStaffDto) {
-    const outlet = this.prismaService.outlets.findFirst({
-      where: {
-        id: data.outletId,
-      },
+    const outlet = await this.outletRepository.findOne({
+      where: { id: data.outletId },
     });
 
     if (!outlet) {
@@ -134,32 +118,26 @@ export class UsersService {
 
     const user: any = await this.create(data as CreateUserDto);
 
-    await this.prismaService.staff.create({
-      data: {
+    await this.staffRepository.save(
+      this.staffRepository.create({
         userId: user.id,
         outletId: data.outletId,
-      },
-    });
+      }),
+    );
 
     return this.findOne(user.id);
   }
 
   async deleteStaff(id: string) {
-    const staff = await this.prismaService.staff.findFirst({
-      where: {
-        userId: id,
-      },
+    const staff = await this.staffRepository.findOne({
+      where: { userId: id },
     });
 
     if (!staff) {
       return new BadRequestException('Staff not found');
     }
 
-    await this.prismaService.staff.deleteMany({
-      where: {
-        userId: id,
-      },
-    });
+    await this.staffRepository.delete({ userId: id });
 
     return this.remove(id);
   }

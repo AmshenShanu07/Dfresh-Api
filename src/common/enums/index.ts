@@ -1,0 +1,21 @@
+export enum UserTypes {
+  ADMIN = 'ADMIN',
+  CUSTOMER = 'CUSTOMER',
+  OUTLET_AGENT = 'OUTLET_AGENT',
+  CENTRAL_STAFF = 'CENTRAL_STAFF',
+  PURCHASE_STAFF = 'PURCHASE_STAFF',
+  SUPPLIER = 'SUPPLIER',
+}
+
+export enum ProductUnits {
+  KG = 'KG',
+  G = 'G',
+}
+
+export enum OrderStatus {
+  PENDING = 'PENDING',
+  CONFIRMED = 'CONFIRMED',
+  DISPATCHED = 'DISPATCHED',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED',
+}

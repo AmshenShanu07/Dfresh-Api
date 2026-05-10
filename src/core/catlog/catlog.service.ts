@@ -1,55 +1,63 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateCatlogDto } from './dto/create-catlog.dto';
-// import { ShareCatlogDto } from './dto/share-catlog.dto';
-import { PrismaService } from 'src/services/prisma.service';
 import { RemoveCatlogProductDto } from '../category/dto/remove-product.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
 import { UpdateCatlogDto } from './dto/update-catlog.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Catalog } from './entities/catalog.entity';
+import { CatalogProducts } from './entities/catalog-products.entity';
 
 @Injectable()
 export class CatlogService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    @InjectRepository(Catalog)
+    private readonly catalogRepository: Repository<Catalog>,
+    @InjectRepository(CatalogProducts)
+    private readonly catalogProductsRepository: Repository<CatalogProducts>,
+  ) {}
 
   async create(createCatlogDto: CreateCatlogDto) {
-    const catalog = await this.prismaService.catalog.create({
-      data: {
+    const catalog = await this.catalogRepository.save(
+      this.catalogRepository.create({
         name: createCatlogDto.name,
         description: createCatlogDto.description,
-      },
-    });
+      }),
+    );
+
     await Promise.all(
-      createCatlogDto.products.map((product) => {
-        return this.prismaService.catalogProducts.create({
-          data: {
+      createCatlogDto.products.map((product) =>
+        this.catalogProductsRepository.save(
+          this.catalogProductsRepository.create({
             productId: product.productId,
             catalogId: catalog.id,
             productCatalogId: product.productCatalogId,
-          },
-        });
-      }),
+          }),
+        ),
+      ),
     );
 
     return this.findOne(catalog.id);
   }
 
   findAll() {
-    return this.prismaService.catalog.findMany({
+    return this.catalogRepository.find({
       where: { isDeleted: false },
-      include: { CatalogProducts: { include: { product: true } } },
+      relations: { CatalogProducts: { product: true } },
     });
   }
 
   getAllCatlogDropDown() {
-    return this.prismaService.catalog.findMany({
+    return this.catalogRepository.find({
       where: { isDeleted: false },
-      select: { id: true, name: true },
+      select: ['id', 'name'],
     });
   }
 
   findOne(id: string) {
-    return this.prismaService.catalog.findFirst({
+    return this.catalogRepository.findOne({
       where: { id },
-      include: { CatalogProducts: { include: { product: true } } },
+      relations: { CatalogProducts: { product: true } },
     });
   }
 
@@ -63,15 +71,11 @@ export class CatlogService {
     }
 
     const [total, data] = await Promise.all([
-      this.prismaService.catalog.count(),
-      this.prismaService.catalog.findMany({
-        include: {
-          CatalogProducts: {
-            include: { product: { include: { category: true } } },
-          },
-        },
-        orderBy: {
-          createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
+      this.catalogRepository.count(),
+      this.catalogRepository.find({
+        relations: { CatalogProducts: { product: { category: true } } },
+        order: {
+          createdAt: filter.sortOrder === -1 ? 'ASC' : 'DESC',
         },
         take: takeCount,
         skip: skipCount,
@@ -82,14 +86,14 @@ export class CatlogService {
   }
 
   getCatalogProducts(id: string) {
-    return this.prismaService.catalogProducts.findMany({
+    return this.catalogProductsRepository.find({
       where: { catalogId: id },
-      include: { product: { include: { category: true } } },
+      relations: { product: { category: true } },
     });
   }
 
   async removeProduct(data: RemoveCatlogProductDto) {
-    const catalog = await this.prismaService.catalog.findFirst({
+    const catalog = await this.catalogRepository.findOne({
       where: { id: data.catlogId },
     });
 
@@ -97,50 +101,42 @@ export class CatlogService {
       return new BadRequestException('Catalog not found');
     }
 
-    await this.prismaService.catalogProducts.deleteMany({
-      where: {
-        catalogId: catalog.id,
-        productId: data.productId,
-      },
+    await this.catalogProductsRepository.delete({
+      catalogId: catalog.id,
+      productId: data.productId,
     });
 
     return this.findOne(catalog.id);
   }
 
   async update(id: string, updateCatlogDto: UpdateCatlogDto) {
-    await this.prismaService.catalogProducts.deleteMany({
-      where: { catalogId: id },
-    });
+    await this.catalogProductsRepository.delete({ catalogId: id });
 
     await Promise.all(
-      updateCatlogDto.products.map((product) => {
-        return this.prismaService.catalogProducts.create({
-          data: {
+      updateCatlogDto.products.map((product) =>
+        this.catalogProductsRepository.save(
+          this.catalogProductsRepository.create({
             productId: product.productId,
             catalogId: id,
             productCatalogId: product.productCatalogId,
-          },
-        });
-      }),
+          }),
+        ),
+      ),
     );
 
-    return this.prismaService.catalog.update({
-      where: { id },
-      data: {
-        name: updateCatlogDto.name,
-        description: updateCatlogDto.description,
-      },
+    await this.catalogRepository.update(id, {
+      name: updateCatlogDto.name,
+      description: updateCatlogDto.description,
     });
+
+    return this.catalogRepository.findOne({ where: { id } });
   }
 
   softDelete(id: string) {
-    return this.prismaService.catalog.update({
-      where: { id },
-      data: { isDeleted: true },
-    });
+    return this.catalogRepository.update(id, { isDeleted: true });
   }
 
   hardDelete(id: string) {
-    return this.prismaService.catalog.delete({ where: { id } });
+    return this.catalogRepository.delete(id);
   }
 }

@@ -1,37 +1,37 @@
 import { Injectable } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { PrismaService } from 'src/services/prisma.service';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
 import { MetaCatalogProductDto, MetaUpdateCatalogProductDto } from 'src/common/dto/meta-catlog-product.dto';
 import { MetaCatalogService } from 'src/services/meta-catalog.service';
-
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Products } from './entities/product.entity';
 
 @Injectable()
-export class ProductService {;
-
+export class ProductService {
   constructor(
-    private readonly prismaService: PrismaService,
+    @InjectRepository(Products)
+    private readonly productRepository: Repository<Products>,
     private readonly catalogService: MetaCatalogService,
   ) {}
 
   async create(createProductDto: CreateProductDto) {
-    const product = await this.prismaService.products.create({
-      data: createProductDto,
-    });
+    const product = await this.productRepository.save(
+      this.productRepository.create(createProductDto),
+    );
 
     const waData: MetaCatalogProductDto = {
       retailer_id: product.id,
       name: createProductDto.name,
       description: createProductDto.description,
-      availability: "out of stock",
-      condition: "new",
+      availability: 'out of stock',
+      condition: 'new',
       price: 199 * 100,
-      currency: "INR",
-      url: "https://hectogon-global.vercel.app/",
+      currency: 'INR',
+      url: 'https://hectogon-global.vercel.app/',
       image_url: createProductDto.image[0],
-      brand: "Dfresh",
-
+      brand: 'Dfresh',
     };
 
     await this.catalogService.createProduct(waData);
@@ -40,11 +40,11 @@ export class ProductService {;
   }
 
   findAll() {
-    return this.prismaService.products.findMany({});
+    return this.productRepository.find();
   }
 
   findOne(id: string) {
-    return this.prismaService.products.findFirst({ where: { id } });
+    return this.productRepository.findOne({ where: { id } });
   }
 
   async getList(filter: FilterCommonDto) {
@@ -57,12 +57,12 @@ export class ProductService {;
     }
 
     const [total, data] = await Promise.all([
-      this.prismaService.products.count({ where: { isDeleted: false } }),
-      this.prismaService.products.findMany({
+      this.productRepository.count({ where: { isDeleted: false } }),
+      this.productRepository.find({
         where: { isDeleted: false },
-        include: { category: true },
-        orderBy: {
-          createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
+        relations: { category: true },
+        order: {
+          createdAt: filter.sortOrder === -1 ? 'ASC' : 'DESC',
         },
         take: takeCount,
         skip: skipCount,
@@ -73,16 +73,15 @@ export class ProductService {;
   }
 
   async update(id: string, updateProductDto: UpdateProductDto) {
-    const product = await this.prismaService.products.update({
-      where: { id },
-      data: updateProductDto,
-    });
+    const existing = await this.productRepository.findOne({ where: { id } });
+    Object.assign(existing, updateProductDto);
+    const product = await this.productRepository.save(existing);
 
     const waData: MetaUpdateCatalogProductDto = {
       name: updateProductDto.name,
       description: updateProductDto.description,
-      image_url: updateProductDto.image[0],
-      visibility: product.isActive ? "published" : "hidden",
+      image_url: updateProductDto.image?.[0],
+      visibility: product.isActive ? 'published' : 'hidden',
     };
 
     await this.catalogService.updateProduct(product.catalogId, waData);
@@ -91,32 +90,22 @@ export class ProductService {;
   }
 
   softDelete(id: string) {
-    return this.prismaService.products.update({
-      where: { id },
-      data: { isDeleted: true },
-    });
+    return this.productRepository.update(id, { isDeleted: true });
   }
 
   hardDelete(id: string) {
-    return this.prismaService.products.delete({ where: { id } });
+    return this.productRepository.delete(id);
   }
 
   async getRandomProductId() {
-    const products = await this.prismaService.products.findMany({
-      where: {
-        isActive: true,
-        isDeleted: false,
-      },
-      select: {
-        id: true,
-      }
+    const products = await this.productRepository.find({
+      where: { isActive: true, isDeleted: false },
+      select: ['id'],
     });
 
-    if(!products || products?.length === 0) return null;
+    if (!products || products.length === 0) return null;
 
     const randomIndex = Math.floor(Math.random() * products.length);
-    const productId = products[randomIndex].id;
-
-    return productId;
+    return products[randomIndex].id;
   }
 }

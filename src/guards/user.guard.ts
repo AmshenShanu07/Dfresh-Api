@@ -5,13 +5,16 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { PrismaService } from 'src/services/prisma.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User } from 'src/core/users/entities/user.entity';
 
 @Injectable()
 export class UserAuthGuard implements CanActivate {
   constructor(
     private jwtService: JwtService,
-    private prisma: PrismaService,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
   ) {}
 
   async canActivate(context: ExecutionContext) {
@@ -38,7 +41,7 @@ export class UserAuthGuard implements CanActivate {
         secret: 'dfresh',
       });
 
-      const userData = await this.prisma.user.findFirst({
+      const userData = await this.userRepository.findOne({
         where: { id: user.id },
       });
 

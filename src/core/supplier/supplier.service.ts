@@ -1,26 +1,32 @@
 import { Injectable } from '@nestjs/common';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
-import { PrismaService } from 'src/services/prisma.service';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Supplier } from './entities/supplier.entity';
 
 @Injectable()
 export class SupplierService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    @InjectRepository(Supplier)
+    private readonly supplierRepository: Repository<Supplier>,
+  ) {}
+
   create(createSupplierDto: CreateSupplierDto) {
-    return this.prismaService.supplier.create({
-      data: {
+    return this.supplierRepository.save(
+      this.supplierRepository.create({
         name: createSupplierDto.name,
         supplierCode: createSupplierDto.supplierCode,
         phone: createSupplierDto.phone,
         email: createSupplierDto.email,
         address: createSupplierDto.address,
-      },
-    });
+      }),
+    );
   }
 
   findAll() {
-    return this.prismaService.supplier.findMany({});
+    return this.supplierRepository.find();
   }
 
   getList(filter: FilterCommonDto) {
@@ -31,9 +37,10 @@ export class SupplierService {
       takeCount = undefined;
       skipCount = undefined;
     }
-    return this.prismaService.supplier.findMany({
-      orderBy: {
-        createdAt: filter.sortOrder === -1 ? 'asc' : 'desc',
+
+    return this.supplierRepository.find({
+      order: {
+        createdAt: filter.sortOrder === -1 ? 'ASC' : 'DESC',
       },
       take: takeCount,
       skip: skipCount,
@@ -41,25 +48,21 @@ export class SupplierService {
   }
 
   findOne(id: string) {
-    return this.prismaService.supplier.findFirst({ where: { id } });
+    return this.supplierRepository.findOne({ where: { id } });
   }
 
-  update(id: string, updateSupplierDto: UpdateSupplierDto) {
-    return this.prismaService.supplier.update({
-      where: { id },
-      data: {
-        name: updateSupplierDto.name,
-        supplierCode: updateSupplierDto.supplierCode,
-        phone: updateSupplierDto.phone,
-        email: updateSupplierDto.email,
-        address: updateSupplierDto.address,
-      },
+  async update(id: string, updateSupplierDto: UpdateSupplierDto) {
+    await this.supplierRepository.update(id, {
+      name: updateSupplierDto.name,
+      supplierCode: updateSupplierDto.supplierCode,
+      phone: updateSupplierDto.phone,
+      email: updateSupplierDto.email,
+      address: updateSupplierDto.address,
     });
+    return this.supplierRepository.findOne({ where: { id } });
   }
 
   remove(id: string) {
-    return this.prismaService.supplier.delete({
-      where: { id },
-    });
+    return this.supplierRepository.delete(id);
   }
 }

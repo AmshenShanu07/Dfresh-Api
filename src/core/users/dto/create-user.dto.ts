@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { UserTypes } from '@prisma/client';
+import { UserTypes } from 'src/common/enums';
 import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateUserDto {

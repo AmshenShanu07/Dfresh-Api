@@ -1,11 +1,15 @@
 import { Module } from '@nestjs/common';
 import { OutletService } from './outlet.service';
 import { OutletController } from './outlet.controller';
-import { PrismaService } from 'src/services/prisma.service';
 import { JwtService } from '@nestjs/jwt';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Outlets } from './entities/outlet.entity';
+import { Staff } from '../users/entities/staff.entity';
+import { User } from '../users/entities/user.entity';
 
 @Module({
+  imports: [TypeOrmModule.forFeature([Outlets, Staff, User])],
   controllers: [OutletController],
-  providers: [OutletService, PrismaService, JwtService],
+  providers: [OutletService, JwtService],
 })
 export class OutletModule {}

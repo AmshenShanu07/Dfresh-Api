@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ProductUnits } from '@prisma/client';
+import { ProductUnits } from 'src/common/enums';
 import { IsEnum, IsNotEmpty, IsNumber } from 'class-validator';
 
 export class ThresholdLevelDto {

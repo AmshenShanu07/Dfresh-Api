@@ -1,7 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import axios, { AxiosInstance } from 'axios';
-import { PrismaService } from './prisma.service';
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Products } from "src/core/product/entities/product.entity";
 import { MetaCatalogProductDto, MetaUpdateCatalogProductDto } from 'src/common/dto/meta-catlog-product.dto';
 
 @Injectable()
@@ -11,8 +13,9 @@ export class MetaCatalogService {
   private readonly waInstance: AxiosInstance;
 
   constructor(
-    private readonly prismaService: PrismaService,
-    private readonly configService: ConfigService
+    @InjectRepository(Products)
+    private readonly productRepository: Repository<Products>,
+    private readonly configService: ConfigService,
   ) {
     this.waCatlogId = "1978442546302613";
     this.waUserToken = this.configService.get<string>('WA_USER_TOKEN');
@@ -24,9 +27,7 @@ export class MetaCatalogService {
         Authorization: `Bearer ${this.waUserToken}`,
       },
     });
-
   }
-
 
   async createProduct(productData: MetaCatalogProductDto) {
     try {
@@ -34,9 +35,8 @@ export class MetaCatalogService {
 
       console.log('product created:', response.data);
       if (response.data?.id) {
-        await this.prismaService.products.update({
-          where: { id: productData.retailer_id },
-          data: { catalogId: response.data.id },
+        await this.productRepository.update(productData.retailer_id, {
+          catalogId: response.data.id,
         });
       }
     } catch (error) {
@@ -47,11 +47,9 @@ export class MetaCatalogService {
     }
   }
 
-
   async updateProduct(productId: string, productData: MetaUpdateCatalogProductDto) {
     try {
       const response = await this.waInstance.post(`/${productId}`, productData);
-
       return response.data;
     } catch (error) {
       console.error('Error hiding Facebook product:', error.response?.data || error.message);
@@ -60,16 +58,11 @@ export class MetaCatalogService {
 
   async visibilityProduct(productId: string, visibility: boolean) {
     try {
-      const payload = {
-        visibility: visibility ? 'published' : 'hidden',
-      }
-      
+      const payload = { visibility: visibility ? 'published' : 'hidden' };
       const response = await this.waInstance.post(`/${productId}`, payload);
-
       return response.data;
     } catch (error) {
       console.error('Error hiding Facebook product:', error.response?.data || error.message);
     }
   }
-
 }
