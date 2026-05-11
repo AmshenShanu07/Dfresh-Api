@@ -29,6 +29,15 @@ export class Products {
   @Column({ type: 'varchar', default: '' })
   catalogId: string;
 
+  @Column({ type: 'boolean', default: false })
+  cleaning: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  cutting: boolean;
+
+  @Column({ type: 'float', default: 0 })
+  totalQuantity: number;
+
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
@@ -41,6 +50,9 @@ export class Products {
   @ManyToOne('Category', 'Products')
   @JoinColumn({ name: 'categoryId' })
   category: any;
+
+  @OneToMany('ProductVariants', 'product')
+  variants: any[];
 
   @OneToMany('CatalogProducts', 'product')
   CatalogProducts: any[];

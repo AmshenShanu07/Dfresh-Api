@@ -11,6 +11,8 @@ export class MetaCatalogProductDto {
   url: string;
   image_url: string;
   brand: string;
+  item_group_id?: string;
+  product_type?: string;
 }
 
 export class MetaUpdateCatalogProductDto extends PartialType(MetaCatalogProductDto){

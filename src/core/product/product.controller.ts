@@ -12,6 +12,7 @@ import {
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { CreateProductVariantDto, UpdateProductVariantDto } from './dto/create-product-variant.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { UserAuthGuard } from 'src/guards/user.guard';
@@ -67,5 +68,40 @@ export class ProductController {
   @Delete('hard-delete/:id')
   hardDelete(@Param('id') id: string) {
     return this.productService.hardDelete(id);
+  }
+
+  // Variant endpoints
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
+  @Post(':productId/variant')
+  createVariant(
+    @Param('productId') productId: string,
+    @Body() dto: CreateProductVariantDto,
+  ) {
+    return this.productService.createVariant(productId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
+  @Get(':productId/variants')
+  findVariants(@Param('productId') productId: string) {
+    return this.productService.findVariants(productId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
+  @Put('variant/:variantId')
+  updateVariant(
+    @Param('variantId') variantId: string,
+    @Body() dto: UpdateProductVariantDto,
+  ) {
+    return this.productService.updateVariant(variantId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
+  @Delete('variant/:variantId')
+  deleteVariant(@Param('variantId') variantId: string) {
+    return this.productService.deleteVariant(variantId);
   }
 }

@@ -37,6 +37,9 @@ export class Outlets {
   @Column({ type: 'float' })
   commission: number;
 
+  @Column({ type: 'varchar', nullable: true, default: null })
+  wardId: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

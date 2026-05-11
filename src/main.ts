@@ -3,6 +3,8 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { getDataSourceToken } from '@nestjs/typeorm';
+import { seedWards } from './core/ward/ward.seed';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -24,7 +26,11 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, options.build());
   SwaggerModule.setup(`doc`, app, document);
 
-  app.useGlobalPipes(new ValidationPipe());
+  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+
+  // Seed ward data on startup (skips if already seeded)
+  const dataSource = app.get(getDataSourceToken());
+  await seedWards(dataSource);
 
   const port: number = Number(process.env.PORT ?? 5200);
 

@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 
@@ -31,4 +32,7 @@ export class CatalogProducts {
   @ManyToOne('Products', 'CatalogProducts')
   @JoinColumn({ name: 'productId' })
   product: any;
+
+  @OneToMany('CatalogProductVariants', 'catalogProduct')
+  catalogVariants: any[];
 }

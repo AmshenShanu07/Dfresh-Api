@@ -4,6 +4,7 @@ import axios, { AxiosInstance } from 'axios';
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Products } from "src/core/product/entities/product.entity";
+import { ProductVariant } from "src/core/product/entities/product-variant.entity";
 import { MetaCatalogProductDto, MetaUpdateCatalogProductDto } from 'src/common/dto/meta-catlog-product.dto';
 
 @Injectable()
@@ -15,6 +16,8 @@ export class MetaCatalogService {
   constructor(
     @InjectRepository(Products)
     private readonly productRepository: Repository<Products>,
+    @InjectRepository(ProductVariant)
+    private readonly variantRepository: Repository<ProductVariant>,
     private readonly configService: ConfigService,
   ) {
     this.waCatlogId = "1978442546302613";
@@ -39,9 +42,42 @@ export class MetaCatalogService {
           catalogId: response.data.id,
         });
       }
-    } catch (error) {
+    } catch (error:any ) {
       console.error(
         'Error creating Facebook product:',
+        error.response?.data || error.message,
+      );
+    }
+  }
+
+  async createVariant(variantId: string, productId: string, productName: string, weight: string, imageUrl: string, categoryName?: string) {
+    try {
+      const payload: MetaCatalogProductDto = {
+        retailer_id: variantId,
+        name: `${productName} | ${weight}`,
+        description: `${productName} - ${weight}`,
+        availability: 'out of stock',
+        condition: 'new',
+        price: 1,
+        currency: 'INR',
+        url: 'https://hectogon-global.vercel.app/',
+        image_url: imageUrl || '',
+        brand: 'Dfresh',
+        item_group_id: productId,
+        product_type: categoryName,
+      };
+
+      const response = await this.waInstance.post(`/${this.waCatlogId}/products`, payload);
+
+      console.log('variant created on Meta:', response.data);
+      if (response.data?.id) {
+        await this.variantRepository.update(variantId, {
+          metaProductId: response.data.id,
+        });
+      }
+    } catch (error:any) {
+      console.error(
+        'Error creating Facebook variant:',
         error.response?.data || error.message,
       );
     }
@@ -51,8 +87,8 @@ export class MetaCatalogService {
     try {
       const response = await this.waInstance.post(`/${productId}`, productData);
       return response.data;
-    } catch (error) {
-      console.error('Error hiding Facebook product:', error.response?.data || error.message);
+    } catch (error: any) {
+      console.error('Error updating Facebook product:', error.response?.data || error.message);
     }
   }
 
@@ -61,7 +97,7 @@ export class MetaCatalogService {
       const payload = { visibility: visibility ? 'published' : 'hidden' };
       const response = await this.waInstance.post(`/${productId}`, payload);
       return response.data;
-    } catch (error) {
+    } catch (error:any) {
       console.error('Error hiding Facebook product:', error.response?.data || error.message);
     }
   }

@@ -23,6 +23,9 @@ export class ShareCatalogProducts {
   @Column({ type: 'varchar' })
   productId: string;
 
+  @Column({ type: 'varchar', nullable: true, default: null })
+  variantId: string;
+
   @Column({ type: 'float' })
   qnty: number;
 
@@ -38,6 +41,10 @@ export class ShareCatalogProducts {
   @ManyToOne('Products', 'ShareCatalogProducts')
   @JoinColumn({ name: 'productId' })
   product: any;
+
+  @ManyToOne('ProductVariants', 'id')
+  @JoinColumn({ name: 'variantId' })
+  variant: any;
 
   @ManyToOne('ShareCatalog', 'ShareCatalogProducts')
   @JoinColumn({ name: 'shareCatalogId' })

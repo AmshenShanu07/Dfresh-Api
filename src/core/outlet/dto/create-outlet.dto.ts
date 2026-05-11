@@ -67,4 +67,13 @@ export class CreateOutletDto {
   @IsNotEmpty()
   @IsNumber()
   commission: number;
+
+  @ApiProperty({
+    example: 'ward-uuid',
+    description: 'The ward ID for this outlet',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  wardId?: string;
 }

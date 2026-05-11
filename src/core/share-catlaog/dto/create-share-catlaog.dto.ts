@@ -7,6 +7,7 @@ import {
   IsEnum,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsString,
   ValidateNested,
 } from 'class-validator';
@@ -16,6 +17,11 @@ class ShareCatalogProductsDto {
   @IsNotEmpty()
   @IsString()
   productId: string;
+
+  @ApiProperty({ example: 'abcdefg' })
+  @IsNotEmpty()
+  @IsString()
+  variantId: string;
 
   @ApiProperty({ example: '10' })
   @IsNotEmpty()
@@ -32,10 +38,10 @@ class ShareCatalogProductsDto {
   @IsNumber()
   price: number;
 
-  @ApiProperty({ example: 'abcdefg' })
-  @IsNotEmpty()
+  @ApiProperty({ example: 'abcdefg', required: false })
+  @IsOptional()
   @IsString()
-  productCatalogId: string;
+  productCatalogId?: string;
 }
 
 export class CreateShareCatlaogDto {

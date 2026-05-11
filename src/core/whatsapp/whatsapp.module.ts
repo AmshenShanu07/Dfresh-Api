@@ -7,11 +7,14 @@ import { MetaCatalogService } from 'src/services/meta-catalog.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../users/entities/user.entity';
 import { Products } from '../product/entities/product.entity';
+import { ProductVariant } from '../product/entities/product-variant.entity';
 import { OrderDetails, OrderItems, DeliveryDetails } from '../order/entities/order.entity';
+import { Category } from '../category/entities/category.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Products, OrderDetails, OrderItems, DeliveryDetails])],
+  imports: [TypeOrmModule.forFeature([User, Products, ProductVariant, OrderDetails, OrderItems, DeliveryDetails, Category])],
   controllers: [WhatsappController],
   providers: [WhatsappService, OrderService, ProductService, MetaCatalogService],
+  exports: [WhatsappService],
 })
 export class WhatsappModule {}

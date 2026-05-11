@@ -34,6 +34,7 @@ export class OutletService {
         phone: createOutletDto.phone,
         location: createOutletDto.location,
         commission: createOutletDto.commission,
+        wardId: createOutletDto.wardId ?? null,
       }),
     );
 
@@ -95,6 +96,7 @@ export class OutletService {
       commission: updateOutletDto.commission,
       isSalesEnabled: updateOutletDto.isSalesEnabled,
       isActive: updateOutletDto.isActive,
+      wardId: updateOutletDto.wardId,
     });
 
     const outletAgent = await this.staffRepository

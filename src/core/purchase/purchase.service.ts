@@ -34,7 +34,7 @@ export class PurchaseService {
     if (!outlet) return new BadRequestException('Outlet not found');
     if (!supplier) return new BadRequestException('Supplier not found');
 
-    return this.purchaseRepository.save(
+    const purchase = await this.purchaseRepository.save(
       this.purchaseRepository.create({
         productId: createPurchaseDto.productId,
         quantity: createPurchaseDto.quantity,
@@ -46,6 +46,14 @@ export class PurchaseService {
         batchNumber: createPurchaseDto.batchNumber,
       }),
     );
+
+    await this.productRepository.increment(
+      { id: createPurchaseDto.productId },
+      'totalQuantity',
+      createPurchaseDto.quantity,
+    );
+
+    return purchase;
   }
 
   async addCleaningDetails(id: string, cleaningDetails: CleaningDetailsDto) {

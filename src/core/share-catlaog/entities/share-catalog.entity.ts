@@ -22,6 +22,9 @@ export class ShareCatalog {
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  isPublished: boolean;
+
   @Column({ type: 'varchar' })
   publishDate: string;
 

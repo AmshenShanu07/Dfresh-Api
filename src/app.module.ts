@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { UsersModule } from './core/users/users.module';
 import { OutletModule } from './core/outlet/outlet.module';
 import { CategoryModule } from './core/category/category.module';
@@ -10,10 +11,12 @@ import { WhatsappModule } from './core/whatsapp/whatsapp.module';
 import { ShareCatlaogModule } from './core/share-catlaog/share-catlaog.module';
 import { UploadModule } from './core/upload/upload.module';
 import { OrderModule } from './core/order/order.module';
+import { WardModule } from './core/ward/ward.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: './.env',
@@ -25,7 +28,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
         type: 'postgres',
         url: configService.get<string>('DATABASE_URL'),
         autoLoadEntities: true,
-        synchronize: false,
+        synchronize: true,
       }),
     }),
     UsersModule,
@@ -38,6 +41,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
     ShareCatlaogModule,
     UploadModule,
     OrderModule,
+    WardModule,
   ],
 })
 export class AppModule {}
