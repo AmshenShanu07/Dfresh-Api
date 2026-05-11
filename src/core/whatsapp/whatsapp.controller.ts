@@ -17,7 +17,9 @@ export class WhatsappController {
     @Query('hub.verify_token') token: string, 
     @Query('hub.challenge') challenge: string
   ): string {
-
+    console.log('mode', mode);
+    console.log('token', token);
+    console.log('challenge', challenge);
     return challenge;
   }
 }
