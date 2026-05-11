@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
-import { ReceiveMessageDto } from './dto/receive-message.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../users/entities/user.entity';
@@ -37,7 +36,7 @@ export class WhatsappService {
     });
   }
 
-  async receiveMessage(data: ReceiveMessageDto) {
+  async receiveMessage(data: any) {
     try {
       await this.sendLog(JSON.stringify(data));
 
@@ -125,7 +124,7 @@ export class WhatsappService {
 
       const response = await this.waInstance.post('/messages', payload);
       console.log('Message sent:', response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
     }
   }
@@ -154,7 +153,7 @@ export class WhatsappService {
 
       const response = await this.waInstance.post('/messages', payload);
       console.log('Message sent:', response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
     }
   }
