@@ -1,6 +1,9 @@
 import { PartialType } from '@nestjs/swagger';
 import { CreateOutletDto } from './create-outlet.dto';
+import { IsBoolean, IsOptional } from 'class-validator';
 
 export class UpdateOutletDto extends PartialType(CreateOutletDto) {
-  isActive: boolean;
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

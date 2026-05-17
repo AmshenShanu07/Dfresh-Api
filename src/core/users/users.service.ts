@@ -62,7 +62,7 @@ export class UsersService {
     if (isExist === null) {
       return new UnauthorizedException('User not found');
     }
-
+    console.log(isExist.password, data);
     const comparePswd = await bcrypt.compare(data.password, isExist.password);
 
     const token = await this.jwtService.sign(

@@ -50,6 +50,7 @@ export class CreateOutletDto {
     required: true,
   })
   @IsNotEmpty()
+  @IsString()
   userId: string;
 
   @ApiProperty({
