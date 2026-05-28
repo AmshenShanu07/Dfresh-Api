@@ -324,17 +324,27 @@ export class WhatsappService {
   private async sendOrderConfirmationMessage(phone: string, order: any) {
     if (!order) return;
 
+    const itemLines = order.orderItems
+      .map((item: any) => `• ${item.product?.name ?? 'Product'} - ${item.quantity} Kg - ₹${item.price}`)
+      .join('\n');
+
+    const d = order.deliveryDetails;
+    const addressLines = d
+      ? `${d.name}\n${d.address}, ${d.pinCode}\nPhone: ${d.phone}`
+      : 'Address not available';
+
+    const body =
+      `✅ *Order Placed Successfully!*\n\n` +
+      `📦 *Your Order:*\n${itemLines}\n\n` +
+      `*Total Amount: ₹${order.totalAmount}*\n\n` +
+      `📍 *Delivery Address:*\n${addressLines}\n\n` +
+      `_Further order updates will be notified to you on WhatsApp._`;
+
     const payload = {
       messaging_product: 'whatsapp',
       to: phone,
       type: 'text',
-      text: {
-        body:
-          `Your order has been confirmed successfully.\nYour order details:\n` +
-          `${order.orderItems
-            .map((item) => `${item.product.name} - ${item.quantity} Kg - Rs.${item.price}`)
-            .join('\n')}\nTotal Amount: Rs.${order.totalAmount}\nThank you for your order!`,
-      },
+      text: { body },
     };
 
     await this.waInstance.post('/messages', payload);

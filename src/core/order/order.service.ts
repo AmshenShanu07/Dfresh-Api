@@ -51,12 +51,16 @@ export class OrderService {
           const variant = await this.productVariantRepository.findOne({
             where: { id: product.product_retailer_id },
           });
-          if (!variant) return;
+          if (!variant) {
+            console.warn(`createOrder: variant not found for product_retailer_id=${product.product_retailer_id}`);
+            return;
+          }
 
           return this.orderItemsRepository.save(
             this.orderItemsRepository.create({
               orderId: order.id,
               productId: variant.productId,
+              variantId: variant.id,
               quantity: parseFloat(product.quantity),
               price: parseFloat(product.item_price),
               totalPrice: parseFloat(product.item_price) * parseFloat(product.quantity),
@@ -131,7 +135,7 @@ export class OrderService {
 
       const order = await this.orderDetailsRepository.findOne({
         where: { id: addressData.flow_token },
-        relations: { orderItems: { product: true } },
+        relations: { orderItems: { product: true }, deliveryDetails: true },
       });
 
       return order;
@@ -162,7 +166,7 @@ export class OrderService {
 
       const order = await this.orderDetailsRepository.findOne({
         where: { id: orderId },
-        relations: { orderItems: { product: true } },
+        relations: { orderItems: { product: true }, deliveryDetails: true },
       });
 
       return order;

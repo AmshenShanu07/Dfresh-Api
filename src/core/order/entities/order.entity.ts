@@ -53,6 +53,9 @@ export class OrderItems {
   @Column({ type: 'varchar' })
   productId: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  variantId: string;
+
   @Column({ type: 'float' })
   quantity: number;
 
@@ -71,6 +74,10 @@ export class OrderItems {
   @ManyToOne('Products', 'OrderItems')
   @JoinColumn({ name: 'productId' })
   product: any;
+
+  @ManyToOne('ProductVariants', 'orderItems', { nullable: true })
+  @JoinColumn({ name: 'variantId' })
+  variant: any;
 
   @ManyToOne('OrderDetails', 'orderItems')
   @JoinColumn({ name: 'orderId' })
