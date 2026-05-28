@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.entity';
 import { User } from '../users/entities/user.entity';
+import { ProductVariant } from '../product/entities/product-variant.entity';
 import { OrderStatus, UserTypes } from 'src/common/enums';
 
 @Injectable()
@@ -17,6 +18,8 @@ export class OrderService {
     private readonly deliveryDetailsRepository: Repository<DeliveryDetails>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(ProductVariant)
+    private readonly productVariantRepository: Repository<ProductVariant>,
   ) {}
 
   async createOrder(phone: string, products: any[]) {
@@ -44,17 +47,22 @@ export class OrderService {
       console.log('order', products);
 
       await Promise.all(
-        products.map((product) =>
-          this.orderItemsRepository.save(
+        products.map(async (product) => {
+          const variant = await this.productVariantRepository.findOne({
+            where: { id: product.product_retailer_id },
+          });
+          if (!variant) return;
+
+          return this.orderItemsRepository.save(
             this.orderItemsRepository.create({
               orderId: order.id,
-              productId: product.product_retailer_id,
+              productId: variant.productId,
               quantity: parseFloat(product.quantity),
               price: parseFloat(product.item_price),
               totalPrice: parseFloat(product.item_price) * parseFloat(product.quantity),
             }),
-          ),
-        ),
+          );
+        }),
       );
 
       return order;
@@ -63,20 +71,46 @@ export class OrderService {
     }
   }
 
-  findAll() {
-    return `This action returns all order`;
+  async findAll(filter: { pageNumber?: number; count?: number; status?: string }) {
+    const takeCount = parseInt((filter.count ?? 10) + '');
+    const skipCount = (parseInt((filter.pageNumber ?? 1) + '') - 1) * takeCount;
+
+    const where: any = {};
+    if (filter.status) where.status = filter.status;
+
+    const [total, data] = await Promise.all([
+      this.orderDetailsRepository.count({ where }),
+      this.orderDetailsRepository.find({
+        where,
+        relations: { user: true, orderItems: true },
+        order: { createdAt: 'DESC' },
+        take: takeCount,
+        skip: skipCount,
+      }),
+    ]);
+
+    return { total, data };
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} order`;
+  async findOne(id: string) {
+    return this.orderDetailsRepository.findOne({
+      where: { id },
+      relations: {
+        user: true,
+        orderItems: { product: { category: true } },
+        deliveryDetails: true,
+      },
+    });
   }
 
-  update(id: number, updateOrderDto: UpdateOrderDto) {
-    return `This action updates a #${id} order`;
+  async confirmOrder(id: string) {
+    await this.orderDetailsRepository.update(id, { status: OrderStatus.CONFIRMED });
+    return { success: true };
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} order`;
+  async cancelOrder(id: string) {
+    await this.orderDetailsRepository.update(id, { status: OrderStatus.CANCELLED });
+    return { success: true };
   }
 
   async updateOrderAddress(addressData: any) {

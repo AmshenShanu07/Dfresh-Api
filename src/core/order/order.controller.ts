@@ -1,34 +1,33 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Patch, Param, Query, UseGuards } from '@nestjs/common';
 import { OrderService } from './order.service';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderDto } from './dto/update-order.dto';
+import { UserAuthGuard } from 'src/guards/user.guard';
 
 @Controller('order')
+@UseGuards(UserAuthGuard)
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
 
-  @Post()
-  create(@Body() createOrderDto: CreateOrderDto) {
-    return 'this.orderService.create(createOrderDto)';
+  @Get('list')
+  findAll(
+    @Query('pageNumber') pageNumber: number,
+    @Query('count') count: number,
+    @Query('status') status: string,
+  ) {
+    return this.orderService.findAll({ pageNumber, count, status });
   }
 
-  @Get()
-  findAll() {
-    return this.orderService.findAll();
-  }
-
-  @Get(':id')
+  @Get('detail/:id')
   findOne(@Param('id') id: string) {
-    return this.orderService.findOne(+id);
+    return this.orderService.findOne(id);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateOrderDto: UpdateOrderDto) {
-    return this.orderService.update(+id, updateOrderDto);
+  @Patch('confirm/:id')
+  confirmOrder(@Param('id') id: string) {
+    return this.orderService.confirmOrder(id);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.orderService.remove(+id);
+  @Patch('cancel/:id')
+  cancelOrder(@Param('id') id: string) {
+    return this.orderService.cancelOrder(id);
   }
 }
