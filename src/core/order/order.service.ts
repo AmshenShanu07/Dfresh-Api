@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.entity';
 import { User } from '../users/entities/user.entity';
-import { UserTypes } from 'src/common/enums';
+import { OrderStatus, UserTypes } from 'src/common/enums';
 
 @Injectable()
 export class OrderService {
@@ -30,6 +30,7 @@ export class OrderService {
       const order = await this.orderDetailsRepository.save(
         this.orderDetailsRepository.create({
           userId: user.id,
+          status: OrderStatus.DRAFT,
           totalAmount: products.reduce(
             (acc, product) =>
               acc + parseFloat(product.item_price) * parseFloat(product.quantity),
@@ -80,11 +81,6 @@ export class OrderService {
 
   async updateOrderAddress(addressData: any) {
     try {
-      const order = await this.orderDetailsRepository.findOne({
-        where: { id: addressData.flow_token },
-        relations: { orderItems: { product: true } },
-      });
-
       await this.deliveryDetailsRepository.save(
         this.deliveryDetailsRepository.create({
           orderId: addressData.flow_token,
@@ -95,9 +91,49 @@ export class OrderService {
         }),
       );
 
+      await this.orderDetailsRepository.update(addressData.flow_token, {
+        status: OrderStatus.PENDING,
+      });
+
+      const order = await this.orderDetailsRepository.findOne({
+        where: { id: addressData.flow_token },
+        relations: { orderItems: { product: true } },
+      });
+
       return order;
     } catch (error) {
       console.error('Error updating order address:', error);
+      return null;
+    }
+  }
+
+  async confirmOrderWithAddress(
+    orderId: string,
+    address: { name: string; address: string; pinCode: string; phone: string },
+  ) {
+    try {
+      await this.deliveryDetailsRepository.save(
+        this.deliveryDetailsRepository.create({
+          orderId,
+          address: address.address,
+          pinCode: address.pinCode,
+          phone: address.phone,
+          name: address.name,
+        }),
+      );
+
+      await this.orderDetailsRepository.update(orderId, {
+        status: OrderStatus.PENDING,
+      });
+
+      const order = await this.orderDetailsRepository.findOne({
+        where: { id: orderId },
+        relations: { orderItems: { product: true } },
+      });
+
+      return order;
+    } catch (error) {
+      console.error('Error confirming order address:', error);
       return null;
     }
   }

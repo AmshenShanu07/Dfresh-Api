@@ -9,7 +9,7 @@ import { ShareCatalog } from './entities/share-catalog.entity';
 import { ShareCatalogProducts } from './entities/share-catalog-products.entity';
 import { Products } from '../product/entities/product.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
-import { User } from '../users/entities/user.entity';
+import { User, UserAddress } from '../users/entities/user.entity';
 import { OrderDetails, OrderItems, DeliveryDetails } from '../order/entities/order.entity';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { ProductService } from '../product/product.service';
@@ -24,6 +24,7 @@ import { Category } from '../category/entities/category.entity';
       Products,
       ProductVariant,
       User,
+      UserAddress,
       OrderDetails,
       OrderItems,
       DeliveryDetails,

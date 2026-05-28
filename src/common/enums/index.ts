@@ -13,6 +13,7 @@ export enum ProductUnits {
 }
 
 export enum OrderStatus {
+  DRAFT = 'DRAFT',
   PENDING = 'PENDING',
   CONFIRMED = 'CONFIRMED',
   DISPATCHED = 'DISPATCHED',

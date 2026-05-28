@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from '../users/entities/user.entity';
+import { User, UserAddress } from '../users/entities/user.entity';
 import { UserTypes } from 'src/common/enums';
 import { OrderService } from '../order/order.service';
 import { ProductService } from '../product/product.service';
@@ -19,6 +19,8 @@ export class WhatsappService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(UserAddress)
+    private readonly userAddressRepository: Repository<UserAddress>,
     private configService: ConfigService,
     private orderService: OrderService,
     private productService: ProductService,
@@ -63,18 +65,24 @@ export class WhatsappService {
       }
 
       if (type == 'interactive') {
-        const intrativeType =
+        const interactiveType =
           data.entry[0].changes[0].value.messages[0].interactive.type;
         const phone = data.entry[0].changes[0].value.messages[0].from;
 
-        if (intrativeType === 'button_reply') {
+        if (interactiveType === 'button_reply') {
           const btnId =
             data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
 
           if (btnId === 'get-catlog') {
             return this.sendProduct(phone);
+          } else if (btnId.startsWith('confirmAddress-')) {
+            const orderId = btnId.replace('confirmAddress-', '');
+            return this.handleConfirmAddress(phone, orderId);
+          } else if (btnId.startsWith('addAddress-')) {
+            const orderId = btnId.replace('addAddress-', '');
+            return this.sendAddressFlowForm(phone, orderId);
           }
-        } else if (intrativeType === 'nfm_reply') {
+        } else if (interactiveType === 'nfm_reply') {
           const formData =
             data.entry[0].changes[0].value.messages[0].interactive.nfm_reply.response_json;
           return this.receiveAddress(phone, formData);
@@ -178,53 +186,157 @@ export class WhatsappService {
       const order = await this.orderService.createOrder(phone, products);
       if (!order) return 'Order creation failed';
 
-      const payload = {
-        messaging_product: 'whatsapp',
-        to: phone,
-        type: 'interactive',
-        interactive: {
-          type: 'flow',
-          body: { text: 'Please share your delivery address' },
-          footer: { text: 'Fresh to home™' },
-          action: {
-            name: 'flow',
-            parameters: {
-              flow_message_version: '3',
-              flow_id: '902959149367544',
-              flow_cta: 'Enter Address',
-              flow_token: order.id,
-            },
-          },
-        },
-      };
+      const user = await this.userRepository.findOne({ where: { phone } });
+      if (!user) return;
 
-      const response = await this.waInstance.post('/messages', payload);
-      console.log('Message sent:', response.data);
+      const existingAddress = await this.userAddressRepository.findOne({
+        where: { userId: user.id },
+        order: { createdAt: 'DESC' },
+      });
+
+      if (existingAddress) {
+        await this.sendAddressConfirmationButtons(phone, order.id, existingAddress);
+      } else {
+        await this.sendAddressFlowForm(phone, order.id);
+      }
     } catch (error) {
       console.error('Error creating order:', error);
     }
   }
 
-  async receiveAddress(phone: string, address: string) {
-    try {
-      const addressData = JSON.parse(address);
-      const order = await this.orderService.updateOrderAddress(addressData);
-
-      const payload = {
-        messaging_product: 'whatsapp',
-        to: phone,
-        type: 'text',
+  private async sendAddressFlowForm(phone: string, orderId: string) {
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'flow',
+        body: { text: 'Please share your delivery address' },
         footer: { text: 'Fresh to home™' },
-        text: {
-          body: `Your order has been confirmed successfully.\nYour order details:\n${order.orderItems
-            .map((item) => `${item.product.name} - ${item.quantity} Kg - Rs.${item.price}`)
-            .join('\n')}\nTotal Amount: ${order.totalAmount}\nThank you for your order!`,
+        action: {
+          name: 'flow',
+          parameters: {
+            flow_message_version: '3',
+            flow_id: '902959149367544',
+            flow_cta: 'Enter Address',
+            flow_token: orderId,
+          },
         },
-      };
+      },
+    };
 
-      this.waInstance.post('/messages', payload);
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Address form sent:', response.data);
+  }
+
+  private async sendAddressConfirmationButtons(
+    phone: string,
+    orderId: string,
+    address: UserAddress,
+  ) {
+    const addressText =
+      `Please verify your delivery address:\n\n` +
+      `Name: ${address.name}\n` +
+      `Address: ${address.address}\n` +
+      `Pin Code: ${address.pinCode}\n` +
+      `Phone: ${address.phone}\n\n` +
+      `Is this correct?`;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: addressText },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          buttons: [
+            {
+              type: 'reply',
+              reply: { id: `confirmAddress-${orderId}`, title: 'Confirm Address' },
+            },
+            {
+              type: 'reply',
+              reply: { id: `addAddress-${orderId}`, title: 'Add New Address' },
+            },
+          ],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Address confirmation sent:', response.data);
+  }
+
+  private async handleConfirmAddress(phone: string, orderId: string) {
+    try {
+      const user = await this.userRepository.findOne({ where: { phone } });
+      if (!user) return;
+
+      const address = await this.userAddressRepository.findOne({
+        where: { userId: user.id },
+        order: { createdAt: 'DESC' },
+      });
+
+      if (!address) {
+        return this.sendAddressFlowForm(phone, orderId);
+      }
+
+      const order = await this.orderService.confirmOrderWithAddress(orderId, {
+        name: address.name,
+        address: address.address,
+        pinCode: address.pinCode,
+        phone: address.phone,
+      });
+
+      await this.sendOrderConfirmationMessage(phone, order);
+    } catch (error) {
+      console.error('Error confirming address:', error);
+    }
+  }
+
+  async receiveAddress(phone: string, addressJsonString: string) {
+    try {
+      const addressData = JSON.parse(addressJsonString);
+
+      const user = await this.userRepository.findOne({ where: { phone } });
+      if (user) {
+        await this.userAddressRepository.save(
+          this.userAddressRepository.create({
+            userId: user.id,
+            name: addressData.name,
+            address: addressData.address,
+            pinCode: addressData.pincode,
+            phone: addressData.phone,
+          }),
+        );
+      }
+
+      const order = await this.orderService.updateOrderAddress(addressData);
+      await this.sendOrderConfirmationMessage(phone, order);
     } catch (error) {
       console.error('Error receiving address:', error);
     }
+  }
+
+  private async sendOrderConfirmationMessage(phone: string, order: any) {
+    if (!order) return;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'text',
+      text: {
+        body:
+          `Your order has been confirmed successfully.\nYour order details:\n` +
+          `${order.orderItems
+            .map((item) => `${item.product.name} - ${item.quantity} Kg - Rs.${item.price}`)
+            .join('\n')}\nTotal Amount: Rs.${order.totalAmount}\nThank you for your order!`,
+      },
+    };
+
+    await this.waInstance.post('/messages', payload);
   }
 }
