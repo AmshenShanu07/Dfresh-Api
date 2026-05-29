@@ -51,6 +51,8 @@ export class OrderService {
           const variant = await this.productVariantRepository.findOne({
             where: { id: product.product_retailer_id },
           });
+          console.log('variant:', variant);
+          
           if (!variant) {
             console.warn(`createOrder: variant not found for product_retailer_id=${product.product_retailer_id}`);
             return;
