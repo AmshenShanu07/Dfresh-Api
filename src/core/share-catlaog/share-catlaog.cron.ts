@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { format, fromZonedTime } from 'date-fns-tz';
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import { ShareCatalog } from './entities/share-catalog.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { User } from '../users/entities/user.entity';
@@ -36,8 +36,8 @@ export function computeCurrentWindowStart(
 ): Date | null {
   if (!daysOfWeek || daysOfWeek.length === 0) return null;
 
-  const todayIST = format(now, 'yyyy-MM-dd', { timeZone: IST_TZ });
-  const nowTime = format(now, 'HH:mm', { timeZone: IST_TZ });
+  const todayIST = formatInTimeZone(now, IST_TZ, 'yyyy-MM-dd');
+  const nowTime = formatInTimeZone(now, IST_TZ, 'HH:mm');
   const todayDow = ymdToWeekday(todayIST);
   const days = new Set(daysOfWeek.map((d) => d.toLowerCase()));
 
@@ -79,7 +79,7 @@ export class ShareCatalogCronService {
   async checkAndShareCatalogs() {
     const now = new Date();
     this.logger.log(
-      `Cron tick — IST ${format(now, 'EEE yyyy-MM-dd HH:mm', { timeZone: IST_TZ })}`,
+      `Cron tick — IST ${formatInTimeZone(now, IST_TZ, 'EEE yyyy-MM-dd HH:mm')}`,
     );
 
     const activeCatalogs = await this.shareCatalogRepository.find({
