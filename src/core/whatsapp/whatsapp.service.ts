@@ -493,6 +493,7 @@ export class WhatsappService {
 
   private async handlePaymentScreenshot(phone: string, mediaId: string) {
     try {
+      console.log('image');
       const order = await this.orderService.findAwaitingScreenshotOrderByPhone(phone);
       if (!order) {
         await this.waInstance.post('/messages', {
