@@ -25,11 +25,17 @@ export class ShareCatalog {
   @Column({ type: 'boolean', default: false })
   isPublished: boolean;
 
-  @Column({ type: 'varchar' })
-  publishDate: string;
+  @Column({ type: 'simple-array', default: '' })
+  daysOfWeek: string[];
 
   @Column({ type: 'varchar' })
-  publishTime: string;
+  startTime: string;
+
+  @Column({ type: 'varchar' })
+  endTime: string;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lastWindowOpenedAt: Date | null;
 
   @CreateDateColumn()
   createdAt: Date;

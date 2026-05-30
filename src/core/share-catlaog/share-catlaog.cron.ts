@@ -2,12 +2,62 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { format, fromZonedTime } from 'date-fns-tz';
 import { ShareCatalog } from './entities/share-catalog.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { User } from '../users/entities/user.entity';
 import { UserTypes } from 'src/common/enums';
 import { MetaCatalogService } from 'src/services/meta-catalog.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { ShareCatlaogService } from './share-catlaog.service';
+
+const IST_TZ = 'Asia/Kolkata';
+const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+
+function ymdToWeekday(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+}
+
+function subOneDayYmd(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const prev = new Date(Date.UTC(y, m - 1, d));
+  prev.setUTCDate(prev.getUTCDate() - 1);
+  const pm = String(prev.getUTCMonth() + 1).padStart(2, '0');
+  const pd = String(prev.getUTCDate()).padStart(2, '0');
+  return `${prev.getUTCFullYear()}-${pm}-${pd}`;
+}
+
+export function computeCurrentWindowStart(
+  now: Date,
+  daysOfWeek: string[],
+  startTime: string,
+  endTime: string,
+): Date | null {
+  if (!daysOfWeek || daysOfWeek.length === 0) return null;
+
+  const todayIST = format(now, 'yyyy-MM-dd', { timeZone: IST_TZ });
+  const nowTime = format(now, 'HH:mm', { timeZone: IST_TZ });
+  const todayDow = ymdToWeekday(todayIST);
+  const days = new Set(daysOfWeek.map((d) => d.toLowerCase()));
+
+  if (startTime < endTime) {
+    if (days.has(todayDow) && nowTime >= startTime && nowTime < endTime) {
+      return fromZonedTime(`${todayIST}T${startTime}:00`, IST_TZ);
+    }
+    return null;
+  }
+
+  // Overnight: endTime <= startTime. (Equality rejected by DTO.)
+  if (days.has(todayDow) && nowTime >= startTime) {
+    return fromZonedTime(`${todayIST}T${startTime}:00`, IST_TZ);
+  }
+  const yesterdayIST = subOneDayYmd(todayIST);
+  if (days.has(ymdToWeekday(yesterdayIST)) && nowTime < endTime) {
+    return fromZonedTime(`${yesterdayIST}T${startTime}:00`, IST_TZ);
+  }
+  return null;
+}
 
 @Injectable()
 export class ShareCatalogCronService {
@@ -22,66 +72,86 @@ export class ShareCatalogCronService {
     private readonly userRepository: Repository<User>,
     private readonly metaCatalogService: MetaCatalogService,
     private readonly whatsappService: WhatsappService,
+    private readonly shareCatlaogService: ShareCatlaogService,
   ) {}
 
   @Cron('*/3 * * * *')
   async checkAndShareCatalogs() {
     const now = new Date();
-    const todayDate = now.toISOString().slice(0, 10); // YYYY-MM-DD
-    const currentTime = now.toTimeString().slice(0, 5); // HH:MM
+    this.logger.log(
+      `Cron tick — IST ${format(now, 'EEE yyyy-MM-dd HH:mm', { timeZone: IST_TZ })}`,
+    );
 
-    this.logger.log(`Cron tick — checking share catalogs for ${todayDate} ${currentTime}`);
-
-    const pending = await this.shareCatalogRepository.find({
-      where: { isActive: true, isPublished: false, publishDate: todayDate },
+    const activeCatalogs = await this.shareCatalogRepository.find({
+      where: { isActive: true, isDeleted: false },
       relations: { ShareCatalogProducts: true },
     });
 
-    for (const catalog of pending) {
-      if (catalog.publishTime > currentTime) continue;
+    for (const catalog of activeCatalogs) {
+      const windowStart = computeCurrentWindowStart(
+        now,
+        catalog.daysOfWeek,
+        catalog.startTime,
+        catalog.endTime,
+      );
+      const inWindow = windowStart !== null;
+      const alreadyFired =
+        catalog.lastWindowOpenedAt != null &&
+        windowStart != null &&
+        catalog.lastWindowOpenedAt.getTime() >= windowStart.getTime();
 
-      this.logger.log(`Publishing share catalog ${catalog.id}`);
+      if (inWindow && !catalog.isPublished && !alreadyFired) {
+        await this.openCatalog(catalog);
+        catalog.isPublished = true;
+        catalog.lastWindowOpenedAt = windowStart;
+        await this.shareCatalogRepository.save(catalog);
+      } else if (!inWindow && catalog.isPublished) {
+        await this.shareCatlaogService.closeCatalogMeta(catalog);
+        catalog.isPublished = false;
+        await this.shareCatalogRepository.save(catalog);
+        this.logger.log(`Share catalog ${catalog.id} window closed`);
+      }
+    }
+  }
 
-      // 1. Activate each variant on Meta
-      await Promise.all(
-        catalog.ShareCatalogProducts.filter((scp) => scp.productCatalogId).map((scp) =>
+  private async openCatalog(catalog: ShareCatalog) {
+    this.logger.log(`Opening share catalog ${catalog.id}`);
+    const products = catalog.ShareCatalogProducts ?? [];
+
+    await Promise.all(
+      products
+        .filter((scp: any) => scp.productCatalogId)
+        .map((scp: any) =>
           this.metaCatalogService.updateProduct(scp.productCatalogId, {
             availability: 'in stock',
             price: scp.price * 100,
             visibility: 'published',
           }),
         ),
-      );
+    );
 
-      // 2. Mark variants as active in DB
-      const variantIds = catalog.ShareCatalogProducts
-        .filter((scp) => scp.variantId)
-        .map((scp) => scp.variantId);
+    const variantIds = products
+      .filter((scp: any) => scp.variantId)
+      .map((scp: any) => scp.variantId);
 
-      if (variantIds.length) {
-        await this.variantRepository
-          .createQueryBuilder()
-          .update(ProductVariant)
-          .set({ isActive: true })
-          .whereInIds(variantIds)
-          .execute();
-      }
-
-      // 3. WhatsApp broadcast to all customers
-      const customers = await this.userRepository.find({
-        where: { userType: UserTypes.CUSTOMER },
-        select: ['phone'],
-      });
-
-      this.logger.log(`Broadcasting to ${customers.length} customers`);
-
-      await Promise.allSettled(
-        customers.map((c) => this.whatsappService.sendProduct(c.phone)),
-      );
-
-      // 4. Mark as published
-      await this.shareCatalogRepository.update(catalog.id, { isPublished: true });
-      this.logger.log(`Share catalog ${catalog.id} published`);
+    if (variantIds.length) {
+      await this.variantRepository
+        .createQueryBuilder()
+        .update(ProductVariant)
+        .set({ isActive: true })
+        .whereInIds(variantIds)
+        .execute();
     }
+
+    const customers = await this.userRepository.find({
+      where: { userType: UserTypes.CUSTOMER },
+      select: ['phone'],
+    });
+
+    this.logger.log(`Broadcasting to ${customers.length} customers`);
+
+    await Promise.allSettled(
+      customers.map((c) => this.whatsappService.sendProduct(c.phone)),
+    );
   }
 }

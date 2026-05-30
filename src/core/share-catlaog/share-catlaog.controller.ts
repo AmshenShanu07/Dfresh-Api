@@ -9,12 +9,19 @@ import {
   UseGuards,
   Query,
 } from '@nestjs/common';
+import { IsBoolean } from 'class-validator';
 import { ShareCatlaogService } from './share-catlaog.service';
 import { CreateShareCatlaogDto } from './dto/create-share-catlaog.dto';
 import { UpdateShareCatlaogDto } from './dto/update-share-catlaog.dto';
-import { ApiBearerAuth } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiProperty } from '@nestjs/swagger';
 import { UserAuthGuard } from 'src/guards/user.guard';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
+
+class SetActiveDto {
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  active: boolean;
+}
 
 @Controller('share-catlaog')
 export class ShareCatlaogController {
@@ -56,6 +63,13 @@ export class ShareCatlaogController {
     @Body() updateShareCatlaogDto: UpdateShareCatlaogDto,
   ) {
     return this.shareCatlaogService.update(id, updateShareCatlaogDto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
+  @Put(':id/active')
+  setActive(@Param('id') id: string, @Body() body: SetActiveDto) {
+    return this.shareCatlaogService.setActive(id, body.active);
   }
 
   @ApiBearerAuth()

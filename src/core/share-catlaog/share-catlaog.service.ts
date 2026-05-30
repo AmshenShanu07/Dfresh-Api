@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateShareCatlaogDto } from './dto/create-share-catlaog.dto';
 import { UpdateShareCatlaogDto } from './dto/update-share-catlaog.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
@@ -25,39 +25,35 @@ export class ShareCatlaogService {
   ) {}
 
   async create(createShareCatlaogDto: CreateShareCatlaogDto) {
-    // Deactivate previous active catalog on Meta (hide variants)
-    const currentCatalog = await this.shareCatalogRepository.findOne({
+    const previous = await this.shareCatalogRepository.findOne({
       where: { isActive: true, isDeleted: false },
       relations: { ShareCatalogProducts: true },
     });
 
-    if (currentCatalog) {
-      await Promise.all(
-        currentCatalog.ShareCatalogProducts.filter((p) => p.productCatalogId).map((product) =>
-          this.catalogService.updateProduct(product.productCatalogId, {
-            availability: 'out of stock',
-            visibility: 'hidden',
-          }),
-        ),
-      );
-      await this.shareCatalogRepository.update(
-        { isActive: true, isDeleted: false },
-        { isActive: false },
-      );
+    if (previous) {
+      if (previous.isPublished) {
+        await this.closeCatalogMeta(previous);
+      }
+      previous.isActive = false;
+      previous.isPublished = false;
+      await this.shareCatalogRepository.save(previous);
     }
 
-    // Resolve productCatalogId (metaProductId) from each variant
     const variantIds = createShareCatlaogDto.shareCatalogProducts.map((p) => p.variantId);
     const variants = await this.variantRepository.findByIds(variantIds);
     const variantMap = new Map(variants.map((v) => [v.id, v]));
 
-    // Create new ShareCatalog (isPublished=false — cron will activate at scheduled time)
     const shareCatalog = await this.shareCatalogRepository.save(
       this.shareCatalogRepository.create({
         catalogId: createShareCatlaogDto.catalogId,
-        publishDate: createShareCatlaogDto.publishDate,
-        publishTime: createShareCatlaogDto.publishTime,
+        daysOfWeek: createShareCatlaogDto.daysOfWeek,
+        startTime: createShareCatlaogDto.startTime,
+        endTime: createShareCatlaogDto.endTime,
+        isActive: true,
         isPublished: false,
+        // Gate against firing for an already-open window at creation time;
+        // cron requires the next windowStart to exceed this timestamp.
+        lastWindowOpenedAt: new Date(),
       }),
     );
 
@@ -80,6 +76,70 @@ export class ShareCatlaogService {
       where: { id: shareCatalog.id },
       relations: { ShareCatalogProducts: { product: true, variant: true }, catalog: true },
     });
+  }
+
+  async setActive(id: string, active: boolean) {
+    const catalog = await this.shareCatalogRepository.findOne({
+      where: { id, isDeleted: false },
+      relations: { ShareCatalogProducts: true },
+    });
+    if (!catalog) {
+      throw new NotFoundException(`ShareCatalog ${id} not found`);
+    }
+
+    if (active) {
+      const others = await this.shareCatalogRepository.find({
+        where: { isActive: true, isDeleted: false },
+        relations: { ShareCatalogProducts: true },
+      });
+      for (const other of others) {
+        if (other.id === id) continue;
+        if (other.isPublished) {
+          await this.closeCatalogMeta(other);
+        }
+        other.isActive = false;
+        other.isPublished = false;
+        await this.shareCatalogRepository.save(other);
+      }
+
+      catalog.isActive = true;
+      catalog.isPublished = false;
+      catalog.lastWindowOpenedAt = new Date();
+    } else {
+      catalog.isActive = false;
+      if (catalog.isPublished) {
+        await this.closeCatalogMeta(catalog);
+        catalog.isPublished = false;
+      }
+    }
+
+    await this.shareCatalogRepository.save(catalog);
+    return catalog;
+  }
+
+  async closeCatalogMeta(catalog: ShareCatalog) {
+    const products = catalog.ShareCatalogProducts ?? [];
+    await Promise.all(
+      products
+        .filter((scp: any) => scp.productCatalogId)
+        .map((scp: any) =>
+          this.catalogService.updateProduct(scp.productCatalogId, {
+            availability: 'out of stock',
+            visibility: 'hidden',
+          }),
+        ),
+    );
+    const variantIds = products
+      .filter((scp: any) => scp.variantId)
+      .map((scp: any) => scp.variantId);
+    if (variantIds.length) {
+      await this.variantRepository
+        .createQueryBuilder()
+        .update(ProductVariant)
+        .set({ isActive: false })
+        .whereInIds(variantIds)
+        .execute();
+    }
   }
 
   findAll() {
