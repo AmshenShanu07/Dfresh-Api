@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
+import { formatInTimeZone } from 'date-fns-tz';
 import { ShareCatalog } from './entities/share-catalog.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { User } from '../users/entities/user.entity';
@@ -10,54 +10,7 @@ import { UserTypes } from 'src/common/enums';
 import { MetaCatalogService } from 'src/services/meta-catalog.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { ShareCatlaogService } from './share-catlaog.service';
-
-const IST_TZ = 'Asia/Kolkata';
-const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
-
-function ymdToWeekday(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
-}
-
-function subOneDayYmd(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number);
-  const prev = new Date(Date.UTC(y, m - 1, d));
-  prev.setUTCDate(prev.getUTCDate() - 1);
-  const pm = String(prev.getUTCMonth() + 1).padStart(2, '0');
-  const pd = String(prev.getUTCDate()).padStart(2, '0');
-  return `${prev.getUTCFullYear()}-${pm}-${pd}`;
-}
-
-export function computeCurrentWindowStart(
-  now: Date,
-  daysOfWeek: string[],
-  startTime: string,
-  endTime: string,
-): Date | null {
-  if (!daysOfWeek || daysOfWeek.length === 0) return null;
-
-  const todayIST = formatInTimeZone(now, IST_TZ, 'yyyy-MM-dd');
-  const nowTime = formatInTimeZone(now, IST_TZ, 'HH:mm');
-  const todayDow = ymdToWeekday(todayIST);
-  const days = new Set(daysOfWeek.map((d) => d.toLowerCase()));
-
-  if (startTime < endTime) {
-    if (days.has(todayDow) && nowTime >= startTime && nowTime < endTime) {
-      return fromZonedTime(`${todayIST}T${startTime}:00`, IST_TZ);
-    }
-    return null;
-  }
-
-  // Overnight: endTime <= startTime. (Equality rejected by DTO.)
-  if (days.has(todayDow) && nowTime >= startTime) {
-    return fromZonedTime(`${todayIST}T${startTime}:00`, IST_TZ);
-  }
-  const yesterdayIST = subOneDayYmd(todayIST);
-  if (days.has(ymdToWeekday(yesterdayIST)) && nowTime < endTime) {
-    return fromZonedTime(`${yesterdayIST}T${startTime}:00`, IST_TZ);
-  }
-  return null;
-}
+import { IST_TZ, computeCurrentWindowStart } from './share-catlaog.window';
 
 @Injectable()
 export class ShareCatalogCronService {

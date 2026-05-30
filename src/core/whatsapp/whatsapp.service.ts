@@ -4,11 +4,17 @@ import axios, { AxiosInstance } from 'axios';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as QRCode from 'qrcode';
+import { formatInTimeZone } from 'date-fns-tz';
 import { User, UserAddress } from '../users/entities/user.entity';
 import { PaymentMethod, UserTypes } from 'src/common/enums';
 import { OrderService } from '../order/order.service';
-import { ProductService } from '../product/product.service';
 import { UploadService } from '../upload/upload.service';
+import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
+import {
+  IST_TZ,
+  computeCurrentWindowStart,
+  computeNextWindowStart,
+} from '../share-catlaog/share-catlaog.window';
 
 @Injectable()
 export class WhatsappService {
@@ -23,9 +29,10 @@ export class WhatsappService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(UserAddress)
     private readonly userAddressRepository: Repository<UserAddress>,
+    @InjectRepository(ShareCatalog)
+    private readonly shareCatalogRepository: Repository<ShareCatalog>,
     private configService: ConfigService,
     private orderService: OrderService,
-    private productService: ProductService,
     private uploadService: UploadService,
   ) {
     this.botToken = this.configService.get<string>('BOT_TOKEN');
@@ -200,28 +207,79 @@ export class WhatsappService {
 
   async sendProduct(phone: string) {
     try {
-      const productId = await this.productService.getRandomProductId();
+      const activeCatalogs = await this.shareCatalogRepository.find({
+        where: { isActive: true, isDeleted: false },
+        relations: { ShareCatalogProducts: true },
+      });
+
+      const now = new Date();
+      const openCatalog = activeCatalogs.find((c) =>
+        computeCurrentWindowStart(now, c.daysOfWeek, c.startTime, c.endTime),
+      );
+
+      if (openCatalog) {
+        const variantIds: string[] = (openCatalog.ShareCatalogProducts ?? [])
+          .map((p: any) => p.variantId)
+          .filter((id: string | null): id is string => !!id);
+
+        if (variantIds.length === 0) {
+          console.warn(
+            `Active share catalog ${openCatalog.id} has no variants — skipping catalog message`,
+          );
+          return;
+        }
+
+        const variantId = variantIds[Math.floor(Math.random() * variantIds.length)];
+
+        const payload = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: phone,
+          type: 'interactive',
+          interactive: {
+            type: 'catalog_message',
+            body: {
+              text: "Hey! Thank you for your interest. It's easy to order from our catalog. Please check our catalog and add items to your order.",
+            },
+            footer: { text: 'Fresh to home™' },
+            action: {
+              name: 'catalog_message',
+              parameters: { thumbnail_product_retailer_id: variantId },
+            },
+          },
+        };
+
+        const response = await this.waInstance.post('/messages', payload);
+        console.log('Catalog message sent:', response.data);
+        return;
+      }
+
+      let nextStart: Date | null = null;
+      for (const c of activeCatalogs) {
+        const candidate = computeNextWindowStart(now, c.daysOfWeek, c.startTime);
+        if (candidate && (!nextStart || candidate < nextStart)) {
+          nextStart = candidate;
+        }
+      }
+
+      const body = nextStart
+        ? `We're not in active hours right now.\nOur next active window opens on ${formatInTimeZone(
+            nextStart,
+            IST_TZ,
+            "EEE, d MMM 'at' h:mm a",
+          )} IST.\nPlease message us then.`
+        : `We're not in active hours right now. Please check back later.`;
 
       const payload = {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to: phone,
-        type: 'interactive',
-        interactive: {
-          type: 'catalog_message',
-          body: {
-            text: "Hey! Thank you for your interest. It's easy to order from our catalog. Please check our catalog and add items to your order.",
-          },
-          footer: { text: 'Fresh to home™' },
-          action: {
-            name: 'catalog_message',
-            parameters: { thumbnail_product_retailer_id: productId },
-          },
-        },
+        type: 'text',
+        text: { body },
       };
 
       const response = await this.waInstance.post('/messages', payload);
-      console.log('Message sent:', response.data);
+      console.log('Off-hours message sent:', response.data);
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
     }

@@ -12,7 +12,6 @@ import { ProductVariant } from '../product/entities/product-variant.entity';
 import { User, UserAddress } from '../users/entities/user.entity';
 import { OrderDetails, OrderItems, DeliveryDetails } from '../order/entities/order.entity';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
-import { ProductService } from '../product/product.service';
 import { OrderService } from '../order/order.service';
 import { Category } from '../category/entities/category.entity';
 import { UploadService } from '../upload/upload.service';
@@ -39,7 +38,6 @@ import { UploadService } from '../upload/upload.service';
     JwtService,
     MetaCatalogService,
     WhatsappService,
-    ProductService,
     OrderService,
     UploadService,
   ],
