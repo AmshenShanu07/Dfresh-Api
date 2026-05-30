@@ -52,6 +52,43 @@ export class WhatsappService {
         return 'This action only accepts text messages';
       }
 
+      const phone: string =
+        data.entry[0]?.changes[0]?.value?.messages[0]?.from;
+
+      if (!phone) {
+        return;
+      }
+
+      const existingUser = await this.userRepository.findOne({
+        where: { phone },
+      });
+
+      if (!existingUser) {
+        await this.userRepository.save(
+          this.userRepository.create({
+            name: '',
+            password: 'customer-password',
+            phone,
+            userType: UserTypes.CUSTOMER,
+          }),
+        );
+        return this.sendNamePromptMessage(phone);
+      }
+
+      if (!existingUser.name || !existingUser.name.trim()) {
+        if (type === 'text') {
+          const text =
+            data.entry[0].changes[0].value.messages[0].text?.body?.trim() || '';
+          if (!text) {
+            return this.sendNamePromptMessage(phone);
+          }
+          existingUser.name = text.slice(0, 100);
+          await this.userRepository.save(existingUser);
+          return this.sendWelcomeMessage(existingUser.name, phone);
+        }
+        return this.sendNamePromptMessage(phone, true);
+      }
+
       if (type == 'order') {
         console.log('Order received', data.entry[0].changes[0].value.messages[0].order);
         await this.createOrder(
@@ -62,15 +99,12 @@ export class WhatsappService {
 
       if (type == 'text') {
         console.log('Text received', data.entry[0].changes[0].value.messages[0].text);
-        const name = data.entry[0].changes[0].value.contacts[0].profile.name;
-        const phone = data.entry[0].changes[0].value.messages[0].from;
-        return this.sendWelcomeMessage(name, phone);
+        return this.sendWelcomeMessage(existingUser.name, phone);
       }
 
       if (type == 'interactive') {
         const interactiveType =
           data.entry[0].changes[0].value.messages[0].interactive.type;
-        const phone = data.entry[0].changes[0].value.messages[0].from;
 
         if (interactiveType === 'button_reply') {
           const btnId =
@@ -99,7 +133,6 @@ export class WhatsappService {
       }
 
       if (type == 'image') {
-        const phone = data.entry[0].changes[0].value.messages[0].from;
         const mediaId = data.entry[0].changes[0].value.messages[0].image?.id;
         if (mediaId) {
           return this.handlePaymentScreenshot(phone, mediaId);
@@ -134,23 +167,34 @@ export class WhatsappService {
         },
       };
 
-      const user = await this.userRepository.findOne({ where: { phone } });
-
-      if (!user) {
-        await this.userRepository.save(
-          this.userRepository.create({
-            name,
-            password: 'customer-password',
-            phone,
-            userType: UserTypes.CUSTOMER,
-          }),
-        );
-      }
-
       const response = await this.waInstance.post('/messages', payload);
       console.log('Message sent:', response.data);
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
+    }
+  }
+
+  private async sendNamePromptMessage(phone: string, isReprompt = false) {
+    try {
+      const body = isReprompt
+        ? 'Please share your name first to continue. Reply with your name.'
+        : 'Hi! Welcome to D-Fresh. Please reply with your name to get started.';
+
+      const payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: phone,
+        type: 'text',
+        text: { body },
+      };
+
+      const response = await this.waInstance.post('/messages', payload);
+      console.log('Name prompt sent:', response.data);
+    } catch (error: any) {
+      console.error(
+        'Error sending name prompt:',
+        error.response?.data || error.message,
+      );
     }
   }
 
