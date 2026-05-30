@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as QRCode from 'qrcode';
 import { User, UserAddress } from '../users/entities/user.entity';
-import { UserTypes } from 'src/common/enums';
+import { PaymentMethod, UserTypes } from 'src/common/enums';
 import { OrderService } from '../order/order.service';
 import { ProductService } from '../product/product.service';
+import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class WhatsappService {
@@ -24,6 +26,7 @@ export class WhatsappService {
     private configService: ConfigService,
     private orderService: OrderService,
     private productService: ProductService,
+    private uploadService: UploadService,
   ) {
     this.botToken = this.configService.get<string>('BOT_TOKEN');
     this.tgChatId = this.configService.get<string>('TG_CHAT_ID');
@@ -81,11 +84,25 @@ export class WhatsappService {
           } else if (btnId.startsWith('addAddress-')) {
             const orderId = btnId.replace('addAddress-', '');
             return this.sendAddressFlowForm(phone, orderId);
+          } else if (btnId.startsWith('selectPaymentCOD-')) {
+            const orderId = btnId.replace('selectPaymentCOD-', '');
+            return this.handleSelectCOD(phone, orderId);
+          } else if (btnId.startsWith('selectPaymentUPI-')) {
+            const orderId = btnId.replace('selectPaymentUPI-', '');
+            return this.handleSelectUPI(phone, orderId);
           }
         } else if (interactiveType === 'nfm_reply') {
           const formData =
             data.entry[0].changes[0].value.messages[0].interactive.nfm_reply.response_json;
           return this.receiveAddress(phone, formData);
+        }
+      }
+
+      if (type == 'image') {
+        const phone = data.entry[0].changes[0].value.messages[0].from;
+        const mediaId = data.entry[0].changes[0].value.messages[0].image?.id;
+        if (mediaId) {
+          return this.handlePaymentScreenshot(phone, mediaId);
         }
       }
     } catch (error) {
@@ -291,7 +308,9 @@ export class WhatsappService {
         phone: address.phone,
       });
 
-      await this.sendOrderConfirmationMessage(phone, order);
+      if (order) {
+        await this.sendPaymentMethodButtons(phone, order.id, order.totalAmount);
+      }
     } catch (error) {
       console.error('Error confirming address:', error);
     }
@@ -315,13 +334,15 @@ export class WhatsappService {
       }
 
       const order = await this.orderService.updateOrderAddress(addressData);
-      await this.sendOrderConfirmationMessage(phone, order);
+      if (order) {
+        await this.sendPaymentMethodButtons(phone, order.id, order.totalAmount);
+      }
     } catch (error) {
       console.error('Error receiving address:', error);
     }
   }
 
-  private async sendOrderConfirmationMessage(phone: string, order: any) {
+  async sendOrderConfirmationMessage(phone: string, order: any) {
     if (!order) return;
 
     const itemLines = order.orderItems
@@ -348,5 +369,184 @@ export class WhatsappService {
     };
 
     await this.waInstance.post('/messages', payload);
+  }
+
+  private async sendPaymentMethodButtons(
+    phone: string,
+    orderId: string,
+    amount: number,
+  ) {
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: {
+          text:
+            `Your order is ready!\n\n` +
+            `*Total: ₹${Number(amount).toFixed(2)}*\n\n` +
+            `Choose your payment method:`,
+        },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          buttons: [
+            {
+              type: 'reply',
+              reply: { id: `selectPaymentCOD-${orderId}`, title: 'Cash on Delivery' },
+            },
+            {
+              type: 'reply',
+              reply: { id: `selectPaymentUPI-${orderId}`, title: 'UPI Payment' },
+            },
+          ],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Payment method buttons sent:', response.data);
+  }
+
+  private async handleSelectCOD(phone: string, orderId: string) {
+    try {
+      const order = await this.orderService.selectPaymentMethod(
+        orderId,
+        PaymentMethod.COD,
+      );
+      if (!order) return;
+      await this.sendCodConfirmationMessage(phone, order);
+    } catch (error) {
+      console.error('Error selecting COD:', error);
+    }
+  }
+
+  private async sendCodConfirmationMessage(phone: string, order: any) {
+    const d = order.deliveryDetails;
+    const addressLines = d
+      ? `${d.name}\n${d.address}, ${d.pinCode}\nPhone: ${d.phone}`
+      : 'Address not available';
+
+    const body =
+      `✅ *Order Confirmed!*\n\n` +
+      `Payment Method: *Cash on Delivery*\n` +
+      `Please pay *₹${Number(order.totalAmount).toFixed(2)}* in cash when your order arrives.\n\n` +
+      `📍 *Delivery Address:*\n${addressLines}\n\n` +
+      `_Further order updates will be notified to you on WhatsApp._`;
+
+    await this.waInstance.post('/messages', {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'text',
+      text: { body },
+    });
+  }
+
+  private async handleSelectUPI(phone: string, orderId: string) {
+    try {
+      const order = await this.orderService.selectPaymentMethod(
+        orderId,
+        PaymentMethod.UPI,
+      );
+      if (!order) return;
+
+      const qrBuffer = await this.generateUpiQrBuffer(order.id, order.totalAmount);
+      const { url } = await this.uploadService.uploadFile({
+        buffer: qrBuffer,
+        mimetype: 'image/png',
+        originalname: `upi-qr-${order.id.slice(0, 8)}.png`,
+      });
+
+      await this.sendUpiQrImage(phone, url, order.totalAmount);
+    } catch (error) {
+      console.error('Error selecting UPI:', error);
+    }
+  }
+
+  private async generateUpiQrBuffer(orderId: string, amount: number): Promise<Buffer> {
+    const vpa = this.configService.get<string>('MERCHANT_UPI_VPA');
+    const name = this.configService.get<string>('MERCHANT_DISPLAY_NAME') || 'D-Fresh';
+    const tn = `order-${orderId.slice(0, 8)}`;
+    const upiUri =
+      `upi://pay?pa=${vpa}&pn=${encodeURIComponent(name)}` +
+      `&am=${Number(amount).toFixed(2)}&cu=INR&tn=${tn}`;
+    return QRCode.toBuffer(upiUri, { type: 'png', width: 512, margin: 2 });
+  }
+
+  private async sendUpiQrImage(phone: string, qrUrl: string, amount: number) {
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'image',
+      image: {
+        link: qrUrl,
+        caption:
+          `Scan this QR to pay *₹${Number(amount).toFixed(2)}*.\n\n` +
+          `After paying, *reply with the payment screenshot* in this chat to confirm your order.`,
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('UPI QR sent:', response.data);
+  }
+
+  private async handlePaymentScreenshot(phone: string, mediaId: string) {
+    try {
+      const order = await this.orderService.findAwaitingScreenshotOrderByPhone(phone);
+      if (!order) {
+        await this.waInstance.post('/messages', {
+          messaging_product: 'whatsapp',
+          to: phone,
+          type: 'text',
+          text: {
+            body:
+              `We couldn't find a pending UPI payment for your number.\n` +
+              `If you've just paid, please place your order again or contact support.`,
+          },
+        });
+        return;
+      }
+
+      const { buffer, mimetype } = await this.downloadWhatsAppMedia(mediaId);
+      const { url } = await this.uploadService.uploadFile({
+        buffer,
+        mimetype,
+        originalname: `payment-screenshot-${order.id.slice(0, 8)}.jpg`,
+      });
+
+      await this.orderService.attachPaymentScreenshot(order.id, url);
+
+      await this.waInstance.post('/messages', {
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: {
+          body:
+            `✅ Thanks! Your payment screenshot has been received.\n\n` +
+            `We'll verify the payment and confirm your order shortly.`,
+        },
+      });
+    } catch (error) {
+      console.error('Error handling payment screenshot:', error);
+    }
+  }
+
+  private async downloadWhatsAppMedia(
+    mediaId: string,
+  ): Promise<{ buffer: Buffer; mimetype: string }> {
+    const metaRes = await axios.get(
+      `https://graph.facebook.com/v22.0/${mediaId}`,
+      { headers: { Authorization: `Bearer ${this.waUserToken}` } },
+    );
+    const mediaUrl: string = metaRes.data.url;
+    const mimetype: string = metaRes.data.mime_type || 'image/jpeg';
+
+    const binRes = await axios.get(mediaUrl, {
+      headers: { Authorization: `Bearer ${this.waUserToken}` },
+      responseType: 'arraybuffer',
+    });
+
+    return { buffer: Buffer.from(binRes.data), mimetype };
   }
 }

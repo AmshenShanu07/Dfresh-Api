@@ -5,7 +5,7 @@ import { Repository } from 'typeorm';
 import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.entity';
 import { User } from '../users/entities/user.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
-import { OrderStatus, UserTypes } from 'src/common/enums';
+import { OrderStatus, PaymentMethod, PaymentStatus, UserTypes } from 'src/common/enums';
 
 @Injectable()
 export class OrderService {
@@ -176,5 +176,69 @@ export class OrderService {
       console.error('Error confirming order address:', error);
       return null;
     }
+  }
+
+  async selectPaymentMethod(orderId: string, method: PaymentMethod) {
+    const updates: Partial<OrderDetails> = { paymentMethod: method };
+    if (method === PaymentMethod.COD) {
+      updates.paymentStatus = PaymentStatus.NOT_REQUIRED;
+      updates.status = OrderStatus.CONFIRMED;
+    } else {
+      updates.paymentStatus = PaymentStatus.AWAITING_SCREENSHOT;
+    }
+
+    await this.orderDetailsRepository.update(orderId, updates);
+
+    return this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+      relations: { orderItems: { product: true }, deliveryDetails: true },
+    });
+  }
+
+  async findAwaitingScreenshotOrderByPhone(phone: string) {
+    const user = await this.userRepository.findOne({
+      where: { phone, userType: UserTypes.CUSTOMER },
+    });
+    if (!user) return null;
+
+    return this.orderDetailsRepository.findOne({
+      where: {
+        userId: user.id,
+        paymentStatus: PaymentStatus.AWAITING_SCREENSHOT,
+      },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async attachPaymentScreenshot(orderId: string, url: string) {
+    await this.orderDetailsRepository.update(orderId, {
+      paymentScreenshotUrl: url,
+      paymentScreenshotAt: new Date(),
+      paymentStatus: PaymentStatus.AWAITING_VERIFICATION,
+    });
+    return this.orderDetailsRepository.findOne({ where: { id: orderId } });
+  }
+
+  async verifyPayment(orderId: string) {
+    const order = await this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+    });
+    if (!order) return null;
+    if (
+      order.paymentMethod !== PaymentMethod.UPI ||
+      order.paymentStatus !== PaymentStatus.AWAITING_VERIFICATION
+    ) {
+      return null;
+    }
+
+    await this.orderDetailsRepository.update(orderId, {
+      paymentStatus: PaymentStatus.VERIFIED,
+      status: OrderStatus.CONFIRMED,
+    });
+
+    return this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+      relations: { orderItems: { product: true }, deliveryDetails: true, user: true },
+    });
   }
 }

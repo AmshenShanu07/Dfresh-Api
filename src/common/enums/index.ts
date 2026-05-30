@@ -20,3 +20,15 @@ export enum OrderStatus {
   DELIVERED = 'DELIVERED',
   CANCELLED = 'CANCELLED',
 }
+
+export enum PaymentMethod {
+  COD = 'COD',
+  UPI = 'UPI',
+}
+
+export enum PaymentStatus {
+  NOT_REQUIRED = 'NOT_REQUIRED',
+  AWAITING_SCREENSHOT = 'AWAITING_SCREENSHOT',
+  AWAITING_VERIFICATION = 'AWAITING_VERIFICATION',
+  VERIFIED = 'VERIFIED',
+}

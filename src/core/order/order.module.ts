@@ -6,9 +6,13 @@ import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.enti
 import { User } from '../users/entities/user.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { JwtService } from '@nestjs/jwt';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([OrderDetails, OrderItems, DeliveryDetails, User, ProductVariant])],
+  imports: [
+    TypeOrmModule.forFeature([OrderDetails, OrderItems, DeliveryDetails, User, ProductVariant]),
+    WhatsappModule,
+  ],
   controllers: [OrderController],
   providers: [OrderService, JwtService],
   exports: [OrderService],

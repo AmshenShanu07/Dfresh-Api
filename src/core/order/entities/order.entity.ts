@@ -9,7 +9,7 @@ import {
   OneToOne,
   JoinColumn,
 } from 'typeorm';
-import { OrderStatus } from 'src/common/enums';
+import { OrderStatus, PaymentMethod, PaymentStatus } from 'src/common/enums';
 
 @Entity('OrderDetails')
 export class OrderDetails {
@@ -24,6 +24,22 @@ export class OrderDetails {
 
   @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.PENDING })
   status: OrderStatus;
+
+  @Column({ type: 'enum', enum: PaymentMethod, nullable: true })
+  paymentMethod: PaymentMethod | null;
+
+  @Column({
+    type: 'enum',
+    enum: PaymentStatus,
+    default: PaymentStatus.NOT_REQUIRED,
+  })
+  paymentStatus: PaymentStatus;
+
+  @Column({ type: 'varchar', nullable: true })
+  paymentScreenshotUrl: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  paymentScreenshotAt: Date | null;
 
   @CreateDateColumn()
   createdAt: Date;

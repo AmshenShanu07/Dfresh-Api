@@ -15,6 +15,7 @@ import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { ProductService } from '../product/product.service';
 import { OrderService } from '../order/order.service';
 import { Category } from '../category/entities/category.entity';
+import { UploadService } from '../upload/upload.service';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { Category } from '../category/entities/category.entity';
     WhatsappService,
     ProductService,
     OrderService,
+    UploadService,
   ],
 })
 export class ShareCatlaogModule {}
