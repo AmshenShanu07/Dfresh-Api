@@ -34,11 +34,16 @@ export class OrderService {
         this.orderDetailsRepository.create({
           userId: user.id,
           status: OrderStatus.DRAFT,
-          totalAmount: products.reduce(
-            (acc, product) =>
-              acc + parseFloat(product.item_price) * parseFloat(product.quantity),
-            0,
-          ),
+          totalAmount: products.reduce((acc, product) => {
+            const addOns =
+              parseFloat(product.cleaningCharge ?? 0) +
+              parseFloat(product.cuttingCharge ?? 0);
+            return (
+              acc +
+              (parseFloat(product.item_price) + addOns) *
+                parseFloat(product.quantity)
+            );
+          }, 0),
         }),
       );
 
@@ -58,17 +63,24 @@ export class OrderService {
             return;
           }
 
+          const cleaningCharge = parseFloat(product.cleaningCharge ?? 0) || 0;
+          const cuttingCharge = parseFloat(product.cuttingCharge ?? 0) || 0;
+          const quantity = parseFloat(product.quantity);
+          const basePrice = parseFloat(product.item_price);
+
           return this.orderItemsRepository.save(
             this.orderItemsRepository.create({
               orderId: order.id,
               productId: variant.productId,
               variantId: variant.id,
-              quantity: parseFloat(product.quantity),
-              price: parseFloat(product.item_price),
-              totalPrice: parseFloat(product.item_price) * parseFloat(product.quantity),
+              quantity,
+              price: basePrice,
+              totalPrice: (basePrice + cleaningCharge + cuttingCharge) * quantity,
               cleaning: product.cleaning ?? false,
+              cleaningCharge,
               cutting: product.cutting ?? false,
               cuttingOption: product.cuttingOption ?? null,
+              cuttingCharge,
             }),
           );
         }),

@@ -16,8 +16,6 @@ import {
   computeNextWindowStart,
 } from '../share-catlaog/share-catlaog.window';
 
-const CUTTING_OPTIONS = ['Curry', 'Steak', 'Fillet', 'Whole'] as const;
-
 @Injectable()
 export class WhatsappService {
   private readonly botToken: string;
@@ -326,7 +324,12 @@ export class WhatsappService {
   private async getOpenCatalog(): Promise<any | null> {
     const activeCatalogs = await this.shareCatalogRepository.find({
       where: { isActive: true, isDeleted: false },
-      relations: { ShareCatalogProducts: { product: true, variant: true } },
+      relations: {
+        ShareCatalogProducts: {
+          product: true,
+          variant: { cuttingStyles: true },
+        },
+      },
     });
 
     const now = new Date();
@@ -469,9 +472,12 @@ export class WhatsappService {
       return this.askCutting(phone, variantId, 'n');
     }
 
+    const charge = entry.variant.cleaningCharge ?? 0;
+    const chargeText = charge > 0 ? ` (+₹${charge})` : '';
+
     return this.sendYesNoButtons(
       phone,
-      'Would you like this item cleaned?',
+      `Would you like this item cleaned?${chargeText}`,
       `clean~${variantId}~y`,
       `clean~${variantId}~n`,
     );
@@ -497,9 +503,25 @@ export class WhatsappService {
   }
 
   async askCuttingOption(phone: string, variantId: string, clean: string) {
-    const rows = CUTTING_OPTIONS.map((opt) => ({
-      id: `cutopt~${variantId}~${clean}~${opt}`,
-      title: opt,
+    const entry = await this.findCatalogEntry(variantId);
+    if (!entry) {
+      await this.sendText(phone, 'Sorry, that item is no longer available.');
+      return this.sendProductList(phone);
+    }
+
+    const styles = (entry.variant.cuttingStyles ?? []).filter(
+      (s: any) => !s.isDeleted,
+    );
+
+    if (styles.length === 0) {
+      // Cutting enabled but no styles configured — skip cutting.
+      return this.sendItemSummary(phone, variantId, clean, 'n', 'none');
+    }
+
+    const rows = styles.slice(0, 10).map((s: any) => ({
+      id: `cutopt~${variantId}~${clean}~${s.style}`,
+      title: this.truncate(s.style, 24),
+      description: s.price > 0 ? `+₹${s.price}` : 'Free',
     }));
 
     const payload = {
@@ -538,20 +560,29 @@ export class WhatsappService {
     const productName = entry.product?.name ?? 'Product';
     const weight = this.formatWeight(entry.variant);
     const price = entry.price;
-    const cleaningText = clean === 'y' ? 'Yes' : 'No';
-    const cuttingText =
-      cut === 'y'
-        ? cuttingOption && cuttingOption !== 'none'
-          ? `Yes (${cuttingOption})`
-          : 'Yes'
-        : 'No';
+
+    const cleaningCharge =
+      clean === 'y' ? entry.variant.cleaningCharge ?? 0 : 0;
+    const cuttingCharge =
+      cut === 'y' ? this.getCuttingPrice(entry.variant, cuttingOption) : 0;
+    const total = price + cleaningCharge + cuttingCharge;
+
+    const lines = [`${productName} — ${weight}`, `Base price: ₹${price}`];
+    if (clean === 'y') {
+      lines.push(`Cleaning: +₹${cleaningCharge}`);
+    }
+    if (cut === 'y') {
+      const label =
+        cuttingOption && cuttingOption !== 'none'
+          ? `Cutting (${cuttingOption})`
+          : 'Cutting';
+      lines.push(`${label}: +₹${cuttingCharge}`);
+    }
 
     const body =
       `🧾 *Order Summary*\n\n` +
-      `${productName} — ${weight}\n` +
-      `Cleaning: ${cleaningText}\n` +
-      `Cutting: ${cuttingText}\n\n` +
-      `*Total: ₹${price}*`;
+      lines.join('\n') +
+      `\n\n*Total: ₹${total}*`;
 
     const payload = {
       messaging_product: 'whatsapp',
@@ -597,21 +628,37 @@ export class WhatsappService {
       return this.sendProductList(phone);
     }
 
+    const resolvedCuttingOption =
+      cut === 'y' && cuttingOption && cuttingOption !== 'none'
+        ? cuttingOption
+        : null;
+
     const products = [
       {
         product_retailer_id: variantId,
         quantity: '1',
         item_price: entry.price,
         cleaning: clean === 'y',
+        // Charges are resolved server-side from the variant, never trusted
+        // from the interactive reply payload.
+        cleaningCharge: clean === 'y' ? entry.variant.cleaningCharge ?? 0 : 0,
         cutting: cut === 'y',
-        cuttingOption:
-          cut === 'y' && cuttingOption && cuttingOption !== 'none'
-            ? cuttingOption
-            : null,
+        cuttingOption: resolvedCuttingOption,
+        cuttingCharge:
+          cut === 'y' ? this.getCuttingPrice(entry.variant, resolvedCuttingOption) : 0,
       },
     ];
 
     return this.createOrder(phone, products);
+  }
+
+  /** Returns the price of a cutting style on a variant, or 0 if not found. */
+  private getCuttingPrice(variant: any, style: string | null): number {
+    if (!style || style === 'none') return 0;
+    const match = (variant?.cuttingStyles ?? []).find(
+      (s: any) => !s.isDeleted && s.style === style,
+    );
+    return match?.price ?? 0;
   }
 
   private async handleCancelItem(phone: string) {
@@ -854,7 +901,18 @@ export class WhatsappService {
     if (!order) return;
 
     const itemLines = order.orderItems
-      .map((item: any) => `• ${item.product?.name ?? 'Product'} - ${item.quantity} Kg - ₹${item.price}`)
+      .map((item: any) => {
+        const addOns: string[] = [];
+        if (item.cleaning) addOns.push(`Cleaning +₹${item.cleaningCharge ?? 0}`);
+        if (item.cutting) {
+          const label = item.cuttingOption
+            ? `Cut ${item.cuttingOption}`
+            : 'Cutting';
+          addOns.push(`${label} +₹${item.cuttingCharge ?? 0}`);
+        }
+        const addOnText = addOns.length ? ` (${addOns.join(', ')})` : '';
+        return `• ${item.product?.name ?? 'Product'} - ${item.quantity} Kg${addOnText} - ₹${item.totalPrice}`;
+      })
       .join('\n');
 
     const d = order.deliveryDetails;

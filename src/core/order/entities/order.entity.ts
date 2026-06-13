@@ -84,11 +84,17 @@ export class OrderItems {
   @Column({ type: 'boolean', default: false })
   cleaning: boolean;
 
+  @Column({ type: 'float', default: 0 })
+  cleaningCharge: number;
+
   @Column({ type: 'boolean', default: false })
   cutting: boolean;
 
   @Column({ type: 'varchar', nullable: true, default: null })
   cuttingOption: string | null;
+
+  @Column({ type: 'float', default: 0 })
+  cuttingCharge: number;
 
   @CreateDateColumn()
   createdAt: Date;
