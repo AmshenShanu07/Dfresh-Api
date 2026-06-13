@@ -31,9 +31,6 @@ export class ProductVariant {
   @Column({ type: 'boolean', default: false })
   cutting: boolean;
 
-  @Column({ type: 'varchar', nullable: true, default: null })
-  metaProductId: string;
-
   @Column({ type: 'boolean', default: false })
   isActive: boolean;
 

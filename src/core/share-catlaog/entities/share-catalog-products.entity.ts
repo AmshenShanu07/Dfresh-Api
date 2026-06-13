@@ -17,9 +17,6 @@ export class ShareCatalogProducts {
   @Column({ type: 'varchar' })
   shareCatalogId: string;
 
-  @Column({ type: 'varchar', default: '' })
-  productCatalogId: string;
-
   @Column({ type: 'varchar' })
   productId: string;
 

@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { WhatsappService } from './whatsapp.service';
 import { WhatsappController } from './whatsapp.controller';
 import { OrderService } from '../order/order.service';
-import { MetaCatalogService } from 'src/services/meta-catalog.service';
 import { UploadService } from '../upload/upload.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User, UserAddress } from '../users/entities/user.entity';
@@ -16,7 +15,7 @@ import { ShareCatalogProducts } from '../share-catlaog/entities/share-catalog-pr
 @Module({
   imports: [TypeOrmModule.forFeature([User, UserAddress, Products, ProductVariant, OrderDetails, OrderItems, DeliveryDetails, Category, ShareCatalog, ShareCatalogProducts])],
   controllers: [WhatsappController],
-  providers: [WhatsappService, OrderService, MetaCatalogService, UploadService],
+  providers: [WhatsappService, OrderService, UploadService],
   exports: [WhatsappService],
 })
 export class WhatsappModule {}

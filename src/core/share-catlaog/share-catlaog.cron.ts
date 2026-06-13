@@ -7,7 +7,6 @@ import { ShareCatalog } from './entities/share-catalog.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { User } from '../users/entities/user.entity';
 import { UserTypes } from 'src/common/enums';
-import { MetaCatalogService } from 'src/services/meta-catalog.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { ShareCatlaogService } from './share-catlaog.service';
 import { IST_TZ, computeCurrentWindowStart } from './share-catlaog.window';
@@ -23,7 +22,6 @@ export class ShareCatalogCronService {
     private readonly variantRepository: Repository<ProductVariant>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    private readonly metaCatalogService: MetaCatalogService,
     private readonly whatsappService: WhatsappService,
     private readonly shareCatlaogService: ShareCatlaogService,
   ) {}
@@ -59,7 +57,7 @@ export class ShareCatalogCronService {
         catalog.lastWindowOpenedAt = windowStart;
         await this.shareCatalogRepository.save(catalog);
       } else if (!inWindow && catalog.isPublished) {
-        await this.shareCatlaogService.closeCatalogMeta(catalog);
+        await this.shareCatlaogService.closeCatalog(catalog);
         catalog.isPublished = false;
         await this.shareCatalogRepository.save(catalog);
         this.logger.log(`Share catalog ${catalog.id} window closed`);
@@ -70,18 +68,6 @@ export class ShareCatalogCronService {
   private async openCatalog(catalog: ShareCatalog) {
     this.logger.log(`Opening share catalog ${catalog.id}`);
     const products = catalog.ShareCatalogProducts ?? [];
-
-    await Promise.all(
-      products
-        .filter((scp: any) => scp.productCatalogId)
-        .map((scp: any) =>
-          this.metaCatalogService.updateProduct(scp.productCatalogId, {
-            availability: 'in stock',
-            price: scp.price * 100,
-            visibility: 'published',
-          }),
-        ),
-    );
 
     const variantIds = products
       .filter((scp: any) => scp.variantId)

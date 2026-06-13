@@ -26,9 +26,6 @@ export class Products {
   @Column({ type: 'varchar' })
   categoryId: string;
 
-  @Column({ type: 'varchar', default: '' })
-  catalogId: string;
-
   @Column({ type: 'boolean', default: false })
   cleaning: boolean;
 

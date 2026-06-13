@@ -192,81 +192,24 @@ export class WhatsappService {
     }
   }
 
+  /**
+   * Broadcast entry point — fired when a share catalog window opens.
+   * Sends a short promo intro then the interactive product list (the catalog
+   * is served from our own DB, not a Meta catalog message).
+   */
   async sendProduct(phone: string) {
     try {
-      const activeCatalogs = await this.shareCatalogRepository.find({
-        where: { isActive: true, isDeleted: false },
-        relations: { ShareCatalogProducts: true },
-      });
+      const catalog = await this.getOpenCatalog();
+      if (!catalog) {
+        return this.sendOffHoursMessage(phone);
+      }
 
-      const now = new Date();
-      const openCatalog = activeCatalogs.find((c) =>
-        computeCurrentWindowStart(now, c.daysOfWeek, c.startTime, c.endTime),
+      await this.sendText(
+        phone,
+        "Hey! Our fresh catalog is live now 🥬\nTap below to browse and place your order.",
       );
 
-      if (openCatalog) {
-        const variantIds: string[] = (openCatalog.ShareCatalogProducts ?? [])
-          .map((p: any) => p.variantId)
-          .filter((id: string | null): id is string => !!id);
-
-        if (variantIds.length === 0) {
-          console.warn(
-            `Active share catalog ${openCatalog.id} has no variants — skipping catalog message`,
-          );
-          return;
-        }
-
-        const variantId = variantIds[Math.floor(Math.random() * variantIds.length)];
-
-        const payload = {
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: phone,
-          type: 'interactive',
-          interactive: {
-            type: 'catalog_message',
-            body: {
-              text: "Hey! Thank you for your interest. It's easy to order from our catalog. Please check our catalog and add items to your order.",
-            },
-            footer: { text: 'Fresh to home™' },
-            action: {
-              name: 'catalog_message',
-              parameters: { thumbnail_product_retailer_id: variantId },
-            },
-          },
-        };
-
-        const response = await this.waInstance.post('/messages', payload);
-        console.log('Catalog message sent:', response.data);
-        return;
-      }
-
-      let nextStart: Date | null = null;
-      for (const c of activeCatalogs) {
-        const candidate = computeNextWindowStart(now, c.daysOfWeek, c.startTime);
-        if (candidate && (!nextStart || candidate < nextStart)) {
-          nextStart = candidate;
-        }
-      }
-
-      const body = nextStart
-        ? `We're not in active hours right now.\nOur next active window opens on ${formatInTimeZone(
-            nextStart,
-            IST_TZ,
-            "EEE, d MMM 'at' h:mm a",
-          )} IST.\nPlease message us then.`
-        : `We're not in active hours right now. Please check back later.`;
-
-      const payload = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: phone,
-        type: 'text',
-        text: { body },
-      };
-
-      const response = await this.waInstance.post('/messages', payload);
-      console.log('Off-hours message sent:', response.data);
+      return this.sendProductList(phone);
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
     }

@@ -3,8 +3,6 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { CreateProductVariantDto, UpdateProductVariantDto } from './dto/create-product-variant.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
-import { MetaUpdateCatalogProductDto } from 'src/common/dto/meta-catlog-product.dto';
-import { MetaCatalogService } from 'src/services/meta-catalog.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Products } from './entities/product.entity';
@@ -24,7 +22,6 @@ export class ProductService {
     private readonly cuttingStyleRepository: Repository<VariantCuttingStyle>,
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
-    private readonly catalogService: MetaCatalogService,
   ) {}
 
   /**
@@ -96,15 +93,11 @@ export class ProductService {
       }),
     );
 
-    const category = await this.categoryRepository.findOne({ where: { id: createProductDto.categoryId } });
-    const categoryName = category?.name;
-
     if (createProductDto.variants?.length) {
       for (const variantDto of createProductDto.variants) {
         this.validateVariantCharges(product, variantDto);
 
         const weightInGrams = variantDto.unit === 'kg' ? variantDto.weight * 1000 : variantDto.weight;
-        const displayWeight = `${variantDto.weight}${variantDto.unit}`;
 
         const variant = await this.variantRepository.save(
           this.variantRepository.create({
@@ -122,15 +115,6 @@ export class ProductService {
           variantDto.cutting ?? false,
           variantDto.cuttingStyles,
         );
-
-        await this.catalogService.createVariant(
-          variant.id,
-          product.id,
-          product.name,
-          displayWeight,
-          product.image?.[0] ?? '',
-          categoryName,
-        );
       }
     }
 
@@ -140,14 +124,12 @@ export class ProductService {
   async createVariant(productId: string, dto: CreateProductVariantDto) {
     const product = await this.productRepository.findOne({
       where: { id: productId },
-      relations: { category: true },
     });
     if (!product) throw new BadRequestException('Product not found');
 
     this.validateVariantCharges(product, dto);
 
     const weightInGrams = dto.unit === 'kg' ? dto.weight * 1000 : dto.weight;
-    const displayWeight = `${dto.weight}${dto.unit}`;
 
     const variant = await this.variantRepository.save(
       this.variantRepository.create({
@@ -161,15 +143,6 @@ export class ProductService {
     );
 
     await this.saveCuttingStyles(variant.id, dto.cutting ?? false, dto.cuttingStyles);
-
-    await this.catalogService.createVariant(
-      variant.id,
-      product.id,
-      product.name,
-      displayWeight,
-      product.image?.[0] ?? '',
-      product.category?.name,
-    );
 
     return this.variantRepository.findOne({
       where: { id: variant.id },
@@ -271,15 +244,6 @@ export class ProductService {
     const existing = await this.productRepository.findOne({ where: { id } });
     Object.assign(existing, updateProductDto);
     const product = await this.productRepository.save(existing);
-
-    const waData: MetaUpdateCatalogProductDto = {
-      name: updateProductDto.name,
-      description: updateProductDto.description,
-      image_url: updateProductDto.image?.[0],
-      visibility: product.isActive ? 'published' : 'hidden',
-    };
-
-    await this.catalogService.updateProduct(product.catalogId, waData);
 
     return product;
   }

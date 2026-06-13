@@ -3,7 +3,6 @@ import { ShareCatlaogService } from './share-catlaog.service';
 import { ShareCatlaogController } from './share-catlaog.controller';
 import { ShareCatalogCronService } from './share-catlaog.cron';
 import { JwtService } from '@nestjs/jwt';
-import { MetaCatalogService } from 'src/services/meta-catalog.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ShareCatalog } from './entities/share-catalog.entity';
 import { ShareCatalogProducts } from './entities/share-catalog-products.entity';
@@ -36,7 +35,6 @@ import { UploadService } from '../upload/upload.service';
     ShareCatlaogService,
     ShareCatalogCronService,
     JwtService,
-    MetaCatalogService,
     WhatsappService,
     OrderService,
     UploadService,

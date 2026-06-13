@@ -44,11 +44,6 @@ class ShareCatalogProductsDto {
   @IsNotEmpty()
   @IsNumber()
   price: number;
-
-  @ApiProperty({ example: 'abcdefg', required: false })
-  @IsOptional()
-  @IsString()
-  productCatalogId?: string;
 }
 
 export class CreateShareCatlaogDto {

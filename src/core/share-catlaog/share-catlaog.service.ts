@@ -2,7 +2,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateShareCatlaogDto } from './dto/create-share-catlaog.dto';
 import { UpdateShareCatlaogDto } from './dto/update-share-catlaog.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
-import { MetaCatalogService } from 'src/services/meta-catalog.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ShareCatalog } from './entities/share-catalog.entity';
@@ -21,7 +20,6 @@ export class ShareCatlaogService {
     private readonly productRepository: Repository<Products>,
     @InjectRepository(ProductVariant)
     private readonly variantRepository: Repository<ProductVariant>,
-    private readonly catalogService: MetaCatalogService,
   ) {}
 
   async create(createShareCatlaogDto: CreateShareCatlaogDto) {
@@ -32,16 +30,12 @@ export class ShareCatlaogService {
 
     if (previous) {
       if (previous.isPublished) {
-        await this.closeCatalogMeta(previous);
+        await this.closeCatalog(previous);
       }
       previous.isActive = false;
       previous.isPublished = false;
       await this.shareCatalogRepository.save(previous);
     }
-
-    const variantIds = createShareCatlaogDto.shareCatalogProducts.map((p) => p.variantId);
-    const variants = await this.variantRepository.findByIds(variantIds);
-    const variantMap = new Map(variants.map((v) => [v.id, v]));
 
     const shareCatalog = await this.shareCatalogRepository.save(
       this.shareCatalogRepository.create({
@@ -58,18 +52,16 @@ export class ShareCatlaogService {
     );
 
     await this.shareCatalogProductsRepository.save(
-      createShareCatlaogDto.shareCatalogProducts.map((product) => {
-        const variant = variantMap.get(product.variantId);
-        return this.shareCatalogProductsRepository.create({
+      createShareCatlaogDto.shareCatalogProducts.map((product) =>
+        this.shareCatalogProductsRepository.create({
           shareCatalogId: shareCatalog.id,
           productId: product.productId,
           variantId: product.variantId,
           qnty: product.qnty,
           qntyUnit: product.qntyUnit,
           price: product.price,
-          productCatalogId: variant?.metaProductId ?? product.productCatalogId ?? '',
-        });
-      }),
+        }),
+      ),
     );
 
     return this.shareCatalogRepository.findOne({
@@ -95,7 +87,7 @@ export class ShareCatlaogService {
       for (const other of others) {
         if (other.id === id) continue;
         if (other.isPublished) {
-          await this.closeCatalogMeta(other);
+          await this.closeCatalog(other);
         }
         other.isActive = false;
         other.isPublished = false;
@@ -108,7 +100,7 @@ export class ShareCatlaogService {
     } else {
       catalog.isActive = false;
       if (catalog.isPublished) {
-        await this.closeCatalogMeta(catalog);
+        await this.closeCatalog(catalog);
         catalog.isPublished = false;
       }
     }
@@ -117,18 +109,9 @@ export class ShareCatlaogService {
     return catalog;
   }
 
-  async closeCatalogMeta(catalog: ShareCatalog) {
+  /** Deactivates a catalog's variants when its window closes. */
+  async closeCatalog(catalog: ShareCatalog) {
     const products = catalog.ShareCatalogProducts ?? [];
-    await Promise.all(
-      products
-        .filter((scp: any) => scp.productCatalogId)
-        .map((scp: any) =>
-          this.catalogService.updateProduct(scp.productCatalogId, {
-            availability: 'out of stock',
-            visibility: 'hidden',
-          }),
-        ),
-    );
     const variantIds = products
       .filter((scp: any) => scp.variantId)
       .map((scp: any) => scp.variantId);
