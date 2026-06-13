@@ -66,6 +66,9 @@ export class OrderService {
               quantity: parseFloat(product.quantity),
               price: parseFloat(product.item_price),
               totalPrice: parseFloat(product.item_price) * parseFloat(product.quantity),
+              cleaning: product.cleaning ?? false,
+              cutting: product.cutting ?? false,
+              cuttingOption: product.cuttingOption ?? null,
             }),
           );
         }),

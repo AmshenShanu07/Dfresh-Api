@@ -81,6 +81,15 @@ export class OrderItems {
   @Column({ type: 'float' })
   totalPrice: number;
 
+  @Column({ type: 'boolean', default: false })
+  cleaning: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  cutting: boolean;
+
+  @Column({ type: 'varchar', nullable: true, default: null })
+  cuttingOption: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

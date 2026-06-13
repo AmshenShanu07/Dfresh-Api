@@ -16,6 +16,8 @@ import {
   computeNextWindowStart,
 } from '../share-catlaog/share-catlaog.window';
 
+const CUTTING_OPTIONS = ['Curry', 'Steak', 'Fillet', 'Whole'] as const;
+
 @Injectable()
 export class WhatsappService {
   private readonly botToken: string;
@@ -110,31 +112,18 @@ export class WhatsappService {
       }
 
       if (type == 'interactive') {
-        const interactiveType =
-          data.entry[0].changes[0].value.messages[0].interactive.type;
+        const interactive =
+          data.entry[0].changes[0].value.messages[0].interactive;
+        const interactiveType = interactive.type;
 
-        if (interactiveType === 'button_reply') {
-          const btnId =
-            data.entry[0].changes[0].value.messages[0].interactive.button_reply.id;
-
-          if (btnId === 'get-catlog') {
-            return this.sendProduct(phone);
-          } else if (btnId.startsWith('confirmAddress-')) {
-            const orderId = btnId.replace('confirmAddress-', '');
-            return this.handleConfirmAddress(phone, orderId);
-          } else if (btnId.startsWith('addAddress-')) {
-            const orderId = btnId.replace('addAddress-', '');
-            return this.sendAddressFlowForm(phone, orderId);
-          } else if (btnId.startsWith('selectPaymentCOD-')) {
-            const orderId = btnId.replace('selectPaymentCOD-', '');
-            return this.handleSelectCOD(phone, orderId);
-          } else if (btnId.startsWith('selectPaymentUPI-')) {
-            const orderId = btnId.replace('selectPaymentUPI-', '');
-            return this.handleSelectUPI(phone, orderId);
-          }
+        if (interactiveType === 'button_reply' || interactiveType === 'list_reply') {
+          const replyId =
+            interactiveType === 'button_reply'
+              ? interactive.button_reply.id
+              : interactive.list_reply.id;
+          return this.handleInteractiveReply(phone, replyId);
         } else if (interactiveType === 'nfm_reply') {
-          const formData =
-            data.entry[0].changes[0].value.messages[0].interactive.nfm_reply.response_json;
+          const formData = interactive.nfm_reply.response_json;
           return this.receiveAddress(phone, formData);
         }
       }
@@ -283,6 +272,423 @@ export class WhatsappService {
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Interactive step-by-step order wizard
+  // ---------------------------------------------------------------------------
+
+  private async handleInteractiveReply(phone: string, replyId: string) {
+    if (!replyId) return;
+
+    const [action, ...parts] = replyId.split('~');
+
+    switch (action) {
+      case 'pickWeight':
+        return this.sendWeightList(phone, parts[0]);
+      case 'prodPage':
+        return this.sendProductList(phone, parseInt(parts[0], 10) || 0);
+      case 'pickVariant':
+        return this.askCleaning(phone, parts[0]);
+      case 'clean':
+        // parts: [variantId, 'y' | 'n']
+        return this.askCutting(phone, parts[0], parts[1]);
+      case 'cut':
+        // parts: [variantId, clean, 'y' | 'n']
+        return parts[2] === 'y'
+          ? this.askCuttingOption(phone, parts[0], parts[1])
+          : this.sendItemSummary(phone, parts[0], parts[1], 'n', 'none');
+      case 'cutopt':
+        // parts: [variantId, clean, option]
+        return this.sendItemSummary(phone, parts[0], parts[1], 'y', parts[2]);
+      case 'place':
+        // parts: [variantId, clean, cut, cuttingOption]
+        return this.placeItem(phone, parts[0], parts[1], parts[2], parts[3]);
+      case 'cancelItem':
+        return this.handleCancelItem(phone);
+    }
+
+    // Legacy hyphen-prefixed actions (catalog entry / address / payment)
+    if (replyId === 'get-catlog') {
+      return this.sendProductList(phone);
+    } else if (replyId.startsWith('confirmAddress-')) {
+      return this.handleConfirmAddress(phone, replyId.replace('confirmAddress-', ''));
+    } else if (replyId.startsWith('addAddress-')) {
+      return this.sendAddressFlowForm(phone, replyId.replace('addAddress-', ''));
+    } else if (replyId.startsWith('selectPaymentCOD-')) {
+      return this.handleSelectCOD(phone, replyId.replace('selectPaymentCOD-', ''));
+    } else if (replyId.startsWith('selectPaymentUPI-')) {
+      return this.handleSelectUPI(phone, replyId.replace('selectPaymentUPI-', ''));
+    }
+  }
+
+  /** Returns the ShareCatalog whose day/time window is currently open, or null. */
+  private async getOpenCatalog(): Promise<any | null> {
+    const activeCatalogs = await this.shareCatalogRepository.find({
+      where: { isActive: true, isDeleted: false },
+      relations: { ShareCatalogProducts: { product: true, variant: true } },
+    });
+
+    const now = new Date();
+    return (
+      activeCatalogs.find((c) =>
+        computeCurrentWindowStart(now, c.daysOfWeek, c.startTime, c.endTime),
+      ) ?? null
+    );
+  }
+
+  /** Finds the open catalog's entry for a given variant, or null. */
+  private async findCatalogEntry(variantId: string): Promise<any | null> {
+    const catalog = await this.getOpenCatalog();
+    if (!catalog) return null;
+    return (
+      (catalog.ShareCatalogProducts ?? []).find(
+        (e: any) => e.variantId === variantId && e.variant,
+      ) ?? null
+    );
+  }
+
+  async sendProductList(phone: string, page = 0) {
+    const catalog = await this.getOpenCatalog();
+    if (!catalog) return this.sendOffHoursMessage(phone);
+
+    const entries = (catalog.ShareCatalogProducts ?? []).filter(
+      (e: any) => e.variantId && e.variant && e.product,
+    );
+
+    // Dedupe by product, preserving first-seen order.
+    const seen = new Set<string>();
+    const products: { id: string; name: string }[] = [];
+    for (const e of entries) {
+      if (seen.has(e.productId)) continue;
+      seen.add(e.productId);
+      products.push({ id: e.productId, name: e.product.name });
+    }
+
+    if (products.length === 0) {
+      return this.sendText(phone, 'No products available right now.');
+    }
+
+    const LIST_MAX = 10;
+    const PAGE_SIZE = 9;
+    let pageProducts: { id: string; name: string }[];
+    let moreRow = false;
+
+    if (products.length <= LIST_MAX) {
+      pageProducts = products;
+    } else {
+      const start = page * PAGE_SIZE;
+      pageProducts = products.slice(start, start + PAGE_SIZE);
+      if (pageProducts.length === 0) {
+        return this.sendProductList(phone, 0); // out-of-range page, restart
+      }
+      moreRow = start + PAGE_SIZE < products.length;
+    }
+
+    const rows: any[] = pageProducts.map((p) => ({
+      id: `pickWeight~${p.id}`,
+      title: this.truncate(p.name, 24),
+    }));
+    if (moreRow) {
+      rows.push({ id: `prodPage~${page + 1}`, title: 'More products' });
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        header: { type: 'text', text: 'Our Products' },
+        body: {
+          text: 'Tap a product to see available weights and place your order.',
+        },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          button: 'View Products',
+          sections: [{ title: 'Products', rows }],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Product list sent:', response.data);
+  }
+
+  async sendWeightList(phone: string, productId: string) {
+    const catalog = await this.getOpenCatalog();
+    if (!catalog) return this.sendOffHoursMessage(phone);
+
+    const entries = (catalog.ShareCatalogProducts ?? []).filter(
+      (e: any) => e.productId === productId && e.variantId && e.variant,
+    );
+
+    if (entries.length === 0) {
+      await this.sendText(phone, 'Sorry, that product is no longer available.');
+      return this.sendProductList(phone);
+    }
+
+    const productName = entries[0].product?.name ?? 'Product';
+
+    const rows = entries.slice(0, 10).map((e: any) => ({
+      id: `pickVariant~${e.variantId}`,
+      title: this.truncate(this.formatWeight(e.variant), 24),
+      description: `₹${e.price}`,
+    }));
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        header: { type: 'text', text: this.truncate(productName, 60) },
+        body: { text: 'Choose a weight.' },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          button: 'Select Weight',
+          sections: [{ title: 'Available Weights', rows }],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Weight list sent:', response.data);
+  }
+
+  async askCleaning(phone: string, variantId: string) {
+    const entry = await this.findCatalogEntry(variantId);
+    if (!entry) {
+      await this.sendText(phone, 'Sorry, that item is no longer available.');
+      return this.sendProductList(phone);
+    }
+
+    if (!entry.variant.cleaning) {
+      return this.askCutting(phone, variantId, 'n');
+    }
+
+    return this.sendYesNoButtons(
+      phone,
+      'Would you like this item cleaned?',
+      `clean~${variantId}~y`,
+      `clean~${variantId}~n`,
+    );
+  }
+
+  async askCutting(phone: string, variantId: string, clean: string) {
+    const entry = await this.findCatalogEntry(variantId);
+    if (!entry) {
+      await this.sendText(phone, 'Sorry, that item is no longer available.');
+      return this.sendProductList(phone);
+    }
+
+    if (!entry.variant.cutting) {
+      return this.sendItemSummary(phone, variantId, clean, 'n', 'none');
+    }
+
+    return this.sendYesNoButtons(
+      phone,
+      'Would you like this item cut?',
+      `cut~${variantId}~${clean}~y`,
+      `cut~${variantId}~${clean}~n`,
+    );
+  }
+
+  async askCuttingOption(phone: string, variantId: string, clean: string) {
+    const rows = CUTTING_OPTIONS.map((opt) => ({
+      id: `cutopt~${variantId}~${clean}~${opt}`,
+      title: opt,
+    }));
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: 'How would you like it cut?' },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          button: 'Choose Cut',
+          sections: [{ title: 'Cutting Options', rows }],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Cutting options sent:', response.data);
+  }
+
+  async sendItemSummary(
+    phone: string,
+    variantId: string,
+    clean: string,
+    cut: string,
+    cuttingOption: string,
+  ) {
+    const entry = await this.findCatalogEntry(variantId);
+    if (!entry) {
+      await this.sendText(phone, 'Sorry, that item is no longer available.');
+      return this.sendProductList(phone);
+    }
+
+    const productName = entry.product?.name ?? 'Product';
+    const weight = this.formatWeight(entry.variant);
+    const price = entry.price;
+    const cleaningText = clean === 'y' ? 'Yes' : 'No';
+    const cuttingText =
+      cut === 'y'
+        ? cuttingOption && cuttingOption !== 'none'
+          ? `Yes (${cuttingOption})`
+          : 'Yes'
+        : 'No';
+
+    const body =
+      `🧾 *Order Summary*\n\n` +
+      `${productName} — ${weight}\n` +
+      `Cleaning: ${cleaningText}\n` +
+      `Cutting: ${cuttingText}\n\n` +
+      `*Total: ₹${price}*`;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: body },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          buttons: [
+            {
+              type: 'reply',
+              reply: {
+                id: `place~${variantId}~${clean}~${cut}~${cuttingOption}`,
+                title: 'Confirm Order',
+              },
+            },
+            {
+              type: 'reply',
+              reply: { id: 'cancelItem', title: 'Cancel' },
+            },
+          ],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Item summary sent:', response.data);
+  }
+
+  async placeItem(
+    phone: string,
+    variantId: string,
+    clean: string,
+    cut: string,
+    cuttingOption: string,
+  ) {
+    const entry = await this.findCatalogEntry(variantId);
+    if (!entry) {
+      await this.sendText(phone, 'Sorry, that item is no longer available.');
+      return this.sendProductList(phone);
+    }
+
+    const products = [
+      {
+        product_retailer_id: variantId,
+        quantity: '1',
+        item_price: entry.price,
+        cleaning: clean === 'y',
+        cutting: cut === 'y',
+        cuttingOption:
+          cut === 'y' && cuttingOption && cuttingOption !== 'none'
+            ? cuttingOption
+            : null,
+      },
+    ];
+
+    return this.createOrder(phone, products);
+  }
+
+  private async handleCancelItem(phone: string) {
+    await this.sendText(phone, 'No problem — here are the products again.');
+    return this.sendProductList(phone);
+  }
+
+  private async sendOffHoursMessage(phone: string) {
+    const activeCatalogs = await this.shareCatalogRepository.find({
+      where: { isActive: true, isDeleted: false },
+    });
+
+    const now = new Date();
+    let nextStart: Date | null = null;
+    for (const c of activeCatalogs) {
+      const candidate = computeNextWindowStart(now, c.daysOfWeek, c.startTime);
+      if (candidate && (!nextStart || candidate < nextStart)) {
+        nextStart = candidate;
+      }
+    }
+
+    const body = nextStart
+      ? `We're not in active hours right now.\nOur next active window opens on ${formatInTimeZone(
+          nextStart,
+          IST_TZ,
+          "EEE, d MMM 'at' h:mm a",
+        )} IST.\nPlease message us then.`
+      : `We're not in active hours right now. Please check back later.`;
+
+    return this.sendText(phone, body);
+  }
+
+  private async sendYesNoButtons(
+    phone: string,
+    bodyText: string,
+    yesId: string,
+    noId: string,
+  ) {
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: bodyText },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: yesId, title: 'Yes' } },
+            { type: 'reply', reply: { id: noId, title: 'No' } },
+          ],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Yes/No buttons sent:', response.data);
+  }
+
+  private async sendText(phone: string, body: string) {
+    await this.waInstance.post('/messages', {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'text',
+      text: { body },
+    });
+  }
+
+  private formatWeight(variant: any): string {
+    return `${variant.weight} ${variant.unit}`;
+  }
+
+  private truncate(text: string, max: number): string {
+    if (!text) return '';
+    return text.length <= max ? text : text.slice(0, max - 1) + '…';
   }
 
   async sendLog(log: string) {
