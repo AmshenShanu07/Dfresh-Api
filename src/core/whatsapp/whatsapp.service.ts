@@ -9,6 +9,7 @@ import { User, UserAddress } from '../users/entities/user.entity';
 import { PaymentMethod, UserTypes } from 'src/common/enums';
 import { OrderService } from '../order/order.service';
 import { UploadService } from '../upload/upload.service';
+import { CartService } from '../cart/cart.service';
 import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
 import {
   IST_TZ,
@@ -34,6 +35,7 @@ export class WhatsappService {
     private configService: ConfigService,
     private orderService: OrderService,
     private uploadService: UploadService,
+    private cartService: CartService,
   ) {
     this.botToken = this.configService.get<string>('BOT_TOKEN');
     this.tgChatId = this.configService.get<string>('TG_CHAT_ID');
@@ -242,11 +244,20 @@ export class WhatsappService {
       case 'cutopt':
         // parts: [variantId, clean, option]
         return this.sendItemSummary(phone, parts[0], parts[1], 'y', parts[2]);
-      case 'place':
+      case 'addToCart':
         // parts: [variantId, clean, cut, cuttingOption]
-        return this.placeItem(phone, parts[0], parts[1], parts[2], parts[3]);
+        return this.addItemToCart(phone, parts[0], parts[1], parts[2], parts[3]);
       case 'cancelItem':
         return this.handleCancelItem(phone);
+      case 'cartAddMore':
+        return this.sendProductList(phone);
+      case 'cartRemove':
+        return this.sendCartRemoveList(phone);
+      case 'cartDel':
+        // parts: [cartItemId]
+        return this.handleRemoveCartItem(phone, parts[0]);
+      case 'cartBuyNow':
+        return this.checkoutCart(phone);
     }
 
     // Legacy hyphen-prefixed actions (catalog entry / address / payment)
@@ -541,8 +552,8 @@ export class WhatsappService {
             {
               type: 'reply',
               reply: {
-                id: `place~${variantId}~${clean}~${cut}~${cuttingOption}`,
-                title: 'Confirm Order',
+                id: `addToCart~${variantId}~${clean}~${cut}~${cuttingOption}`,
+                title: 'Add to Cart',
               },
             },
             {
@@ -558,7 +569,8 @@ export class WhatsappService {
     console.log('Item summary sent:', response.data);
   }
 
-  async placeItem(
+  /** Adds the configured item to the customer's cart, then shows the cart summary. */
+  async addItemToCart(
     phone: string,
     variantId: string,
     clean: string,
@@ -576,23 +588,163 @@ export class WhatsappService {
         ? cuttingOption
         : null;
 
-    const products = [
-      {
-        product_retailer_id: variantId,
-        quantity: '1',
-        item_price: entry.price,
-        cleaning: clean === 'y',
-        // Charges are resolved server-side from the variant, never trusted
-        // from the interactive reply payload.
-        cleaningCharge: clean === 'y' ? entry.variant.cleaningCharge ?? 0 : 0,
-        cutting: cut === 'y',
-        cuttingOption: resolvedCuttingOption,
-        cuttingCharge:
-          cut === 'y' ? this.getCuttingPrice(entry.variant, resolvedCuttingOption) : 0,
-      },
-    ];
+    // Charges are resolved server-side from the variant, never trusted from the
+    // interactive reply payload.
+    const cart = await this.cartService.addItem(phone, {
+      variantId,
+      productId: entry.variant.productId,
+      price: entry.price,
+      cleaning: clean === 'y',
+      cleaningCharge: clean === 'y' ? entry.variant.cleaningCharge ?? 0 : 0,
+      cutting: cut === 'y',
+      cuttingOption: resolvedCuttingOption,
+      cuttingCharge:
+        cut === 'y' ? this.getCuttingPrice(entry.variant, resolvedCuttingOption) : 0,
+    });
 
-    return this.createOrder(phone, products);
+    if (!cart) {
+      return this.sendText(phone, 'Could not add the item to your cart. Please try again.');
+    }
+
+    return this.sendCartSummary(phone);
+  }
+
+  /** Returns the line total for a single cart item, charges included. */
+  private cartLineTotal(item: any): number {
+    return (
+      (item.price + (item.cleaningCharge ?? 0) + (item.cuttingCharge ?? 0)) *
+      item.quantity
+    );
+  }
+
+  /** Builds a one-line label for a cart item, e.g. "Chicken — 1 kg (Cleaned, Curry) x2". */
+  private cartItemLabel(item: any): string {
+    const product = item.product?.name ?? 'Item';
+    const weight = item.variant ? this.formatWeight(item.variant) : '';
+    const addOns: string[] = [];
+    if (item.cleaning) addOns.push('Cleaned');
+    if (item.cutting) {
+      addOns.push(item.cuttingOption ? `Cut: ${item.cuttingOption}` : 'Cut');
+    }
+    const addOnText = addOns.length ? ` (${addOns.join(', ')})` : '';
+    const qtyText = item.quantity > 1 ? ` x${item.quantity}` : '';
+    return `${product}${weight ? ` — ${weight}` : ''}${addOnText}${qtyText}`;
+  }
+
+  async sendCartSummary(phone: string) {
+    const cart = await this.cartService.getCart(phone);
+    const items = cart?.cartItems ?? [];
+
+    if (items.length === 0) {
+      await this.sendText(phone, 'Your cart is empty. Here are the products again.');
+      return this.sendProductList(phone);
+    }
+
+    const lines = items.map(
+      (item: any) => `• ${this.cartItemLabel(item)} — ₹${this.cartLineTotal(item)}`,
+    );
+    const totalQty = items.reduce((acc: number, i: any) => acc + i.quantity, 0);
+    const grandTotal = items.reduce(
+      (acc: number, i: any) => acc + this.cartLineTotal(i),
+      0,
+    );
+
+    const body =
+      `🛒 *Your Cart*\n\n` +
+      lines.join('\n') +
+      `\n\nTotal items: ${totalQty}` +
+      `\n*Total: ₹${grandTotal}*`;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: body },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: 'cartAddMore', title: 'Add more' } },
+            { type: 'reply', reply: { id: 'cartRemove', title: 'Remove item' } },
+            { type: 'reply', reply: { id: 'cartBuyNow', title: 'Buy it now' } },
+          ],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Cart summary sent:', response.data);
+  }
+
+  /** Shows a list of cart lines so the customer can pick one to remove. */
+  async sendCartRemoveList(phone: string) {
+    const cart = await this.cartService.getCart(phone);
+    const items = cart?.cartItems ?? [];
+
+    if (items.length === 0) {
+      return this.sendCartSummary(phone); // routes back to product list when empty
+    }
+
+    const rows = items.slice(0, 10).map((item: any) => ({
+      id: `cartDel~${item.id}`,
+      title: this.truncate(this.cartItemLabel(item), 24),
+      description: `₹${this.cartLineTotal(item)}`,
+    }));
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        header: { type: 'text', text: 'Remove an item' },
+        body: { text: 'Select an item to remove from your cart.' },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          button: 'Remove',
+          sections: [{ title: 'Cart Items', rows }],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Cart remove list sent:', response.data);
+  }
+
+  async handleRemoveCartItem(phone: string, cartItemId: string) {
+    await this.cartService.removeItem(phone, cartItemId);
+    await this.sendText(phone, 'Item removed from your cart.');
+    return this.sendCartSummary(phone);
+  }
+
+  /** Converts the cart into a DRAFT order and enters the address → payment flow. */
+  async checkoutCart(phone: string) {
+    const cart = await this.cartService.getCart(phone);
+    const items = cart?.cartItems ?? [];
+
+    if (items.length === 0) {
+      await this.sendText(phone, 'Your cart is empty. Here are the products again.');
+      return this.sendProductList(phone);
+    }
+
+    // Map cart lines into the products[] shape orderService.createOrder consumes.
+    const products = items.map((item: any) => ({
+      product_retailer_id: item.variantId,
+      quantity: `${item.quantity}`,
+      item_price: item.price,
+      cleaning: item.cleaning,
+      cleaningCharge: item.cleaningCharge ?? 0,
+      cutting: item.cutting,
+      cuttingOption: item.cuttingOption,
+      cuttingCharge: item.cuttingCharge ?? 0,
+    }));
+
+    // createOrder builds the DRAFT order and sends the address confirmation/flow.
+    await this.createOrder(phone, products);
+    await this.cartService.clearCart(cart.id);
   }
 
   /** Returns the price of a cutting style on a variant, or 0 if not found. */

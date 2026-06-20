@@ -14,6 +14,8 @@ import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { OrderService } from '../order/order.service';
 import { Category } from '../category/entities/category.entity';
 import { UploadService } from '../upload/upload.service';
+import { Cart, CartItem } from '../cart/entities/cart.entity';
+import { CartService } from '../cart/cart.service';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { UploadService } from '../upload/upload.service';
       OrderItems,
       DeliveryDetails,
       Category,
+      Cart,
+      CartItem,
     ]),
   ],
   controllers: [ShareCatlaogController],
@@ -38,6 +42,7 @@ import { UploadService } from '../upload/upload.service';
     WhatsappService,
     OrderService,
     UploadService,
+    CartService,
   ],
 })
 export class ShareCatlaogModule {}

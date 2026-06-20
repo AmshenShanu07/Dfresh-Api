@@ -11,11 +11,13 @@ import { OrderDetails, OrderItems, DeliveryDetails } from '../order/entities/ord
 import { Category } from '../category/entities/category.entity';
 import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
 import { ShareCatalogProducts } from '../share-catlaog/entities/share-catalog-products.entity';
+import { Cart, CartItem } from '../cart/entities/cart.entity';
+import { CartService } from '../cart/cart.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, UserAddress, Products, ProductVariant, OrderDetails, OrderItems, DeliveryDetails, Category, ShareCatalog, ShareCatalogProducts])],
+  imports: [TypeOrmModule.forFeature([User, UserAddress, Products, ProductVariant, OrderDetails, OrderItems, DeliveryDetails, Category, ShareCatalog, ShareCatalogProducts, Cart, CartItem])],
   controllers: [WhatsappController],
-  providers: [WhatsappService, OrderService, UploadService],
+  providers: [WhatsappService, OrderService, UploadService, CartService],
   exports: [WhatsappService],
 })
 export class WhatsappModule {}
