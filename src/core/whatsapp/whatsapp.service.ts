@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import * as QRCode from 'qrcode';
 import { formatInTimeZone } from 'date-fns-tz';
 import { User, UserAddress } from '../users/entities/user.entity';
-import { PaymentMethod, UserTypes } from 'src/common/enums';
+import { PaymentMethod, ShareCatalogStatus, UserTypes } from 'src/common/enums';
 import { OrderService } from '../order/order.service';
 import { UploadService } from '../upload/upload.service';
 import { CartService } from '../cart/cart.service';
@@ -277,12 +277,16 @@ export class WhatsappService {
   /** Returns the ShareCatalog whose day/time window is currently open, or null. */
   private async getOpenCatalog(): Promise<any | null> {
     const activeCatalogs = await this.shareCatalogRepository.find({
-      where: { isActive: true, isDeleted: false },
+      where: {
+        status: In([ShareCatalogStatus.ACTIVE, ShareCatalogStatus.LIVE]),
+        isDeleted: false,
+      },
       relations: {
         ShareCatalogProducts: {
           product: true,
           variant: { cuttingStyles: true },
         },
+        ShareCatalogProductStock: true,
       },
     });
 
@@ -294,15 +298,33 @@ export class WhatsappService {
     );
   }
 
+  /** Remaining offered grams for a product within the open catalog. */
+  private remainingGramsFor(catalog: any, productId: string): number {
+    const stock = (catalog?.ShareCatalogProductStock ?? []).find(
+      (s: any) => s.productId === productId,
+    );
+    return stock?.remainingGrams ?? 0;
+  }
+
+  /**
+   * A catalog entry (variant) is sellable only when its product still has
+   * enough remaining allocation to cover the variant's weight.
+   */
+  private isEntrySellable(catalog: any, entry: any): boolean {
+    const remaining = this.remainingGramsFor(catalog, entry.productId);
+    const weight = entry.variant?.weight ?? Infinity;
+    return remaining > 0 && weight <= remaining;
+  }
+
   /** Finds the open catalog's entry for a given variant, or null. */
   private async findCatalogEntry(variantId: string): Promise<any | null> {
     const catalog = await this.getOpenCatalog();
     if (!catalog) return null;
-    return (
-      (catalog.ShareCatalogProducts ?? []).find(
-        (e: any) => e.variantId === variantId && e.variant,
-      ) ?? null
+    const entry = (catalog.ShareCatalogProducts ?? []).find(
+      (e: any) => e.variantId === variantId && e.variant,
     );
+    if (!entry || !this.isEntrySellable(catalog, entry)) return null;
+    return entry;
   }
 
   async sendProductList(phone: string, page = 0) {
@@ -310,7 +332,11 @@ export class WhatsappService {
     if (!catalog) return this.sendOffHoursMessage(phone);
 
     const entries = (catalog.ShareCatalogProducts ?? []).filter(
-      (e: any) => e.variantId && e.variant && e.product,
+      (e: any) =>
+        e.variantId &&
+        e.variant &&
+        e.product &&
+        this.isEntrySellable(catalog, e),
     );
 
     // Dedupe by product, preserving first-seen order.
@@ -378,7 +404,11 @@ export class WhatsappService {
     if (!catalog) return this.sendOffHoursMessage(phone);
 
     const entries = (catalog.ShareCatalogProducts ?? []).filter(
-      (e: any) => e.productId === productId && e.variantId && e.variant,
+      (e: any) =>
+        e.productId === productId &&
+        e.variantId &&
+        e.variant &&
+        this.isEntrySellable(catalog, e),
     );
 
     if (entries.length === 0) {
@@ -763,7 +793,10 @@ export class WhatsappService {
 
   private async sendOffHoursMessage(phone: string) {
     const activeCatalogs = await this.shareCatalogRepository.find({
-      where: { isActive: true, isDeleted: false },
+      where: {
+        status: In([ShareCatalogStatus.ACTIVE, ShareCatalogStatus.LIVE]),
+        isDeleted: false,
+      },
     });
 
     const now = new Date();

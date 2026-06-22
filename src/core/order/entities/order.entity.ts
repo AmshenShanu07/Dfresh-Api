@@ -35,6 +35,9 @@ export class OrderDetails {
   })
   paymentStatus: PaymentStatus;
 
+  @Column({ type: 'boolean', default: false })
+  stockDeducted: boolean;
+
   @Column({ type: 'varchar', nullable: true })
   paymentScreenshotUrl: string | null;
 

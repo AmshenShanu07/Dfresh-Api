@@ -10,6 +10,8 @@ import { ProductVariant, VariantCuttingStyle } from './entities/product-variant.
 import { Category } from '../category/entities/category.entity';
 import { CUTTING_STYLES } from 'src/common/constants';
 import { CuttingStyleDto } from './dto/create-product-variant.dto';
+import { ProductUnits } from 'src/common/enums';
+import { toGrams } from 'src/common/utils/units';
 
 @Injectable()
 export class ProductService {
@@ -90,6 +92,13 @@ export class ProductService {
         categoryId: createProductDto.categoryId,
         cleaning: createProductDto.cleaning ?? false,
         cutting: createProductDto.cutting ?? false,
+        totalQuantity:
+          createProductDto.totalQuantity != null
+            ? toGrams(
+                createProductDto.totalQuantity,
+                createProductDto.totalQuantityUnit ?? ProductUnits.G,
+              )
+            : 0,
       }),
     );
 
@@ -242,7 +251,18 @@ export class ProductService {
 
   async update(id: string, updateProductDto: UpdateProductDto) {
     const existing = await this.productRepository.findOne({ where: { id } });
-    Object.assign(existing, updateProductDto);
+
+    // Stock is stored in grams; convert from the supplied display unit and
+    // strip the unit field so it isn't blindly assigned onto the entity.
+    const { totalQuantity, totalQuantityUnit, ...rest } = updateProductDto;
+    Object.assign(existing, rest);
+    if (totalQuantity != null) {
+      existing.totalQuantity = toGrams(
+        totalQuantity,
+        totalQuantityUnit ?? ProductUnits.G,
+      );
+    }
+
     const product = await this.productRepository.save(existing);
 
     return product;

@@ -6,6 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ShareCatalog } from './entities/share-catalog.entity';
 import { ShareCatalogProducts } from './entities/share-catalog-products.entity';
+import { ShareCatalogProductStock } from './entities/share-catalog-product-stock.entity';
 import { Products } from '../product/entities/product.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { User, UserAddress } from '../users/entities/user.entity';
@@ -22,6 +23,7 @@ import { CartService } from '../cart/cart.service';
     TypeOrmModule.forFeature([
       ShareCatalog,
       ShareCatalogProducts,
+      ShareCatalogProductStock,
       Products,
       ProductVariant,
       User,

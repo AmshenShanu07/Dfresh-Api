@@ -30,7 +30,19 @@ class ShareCatalogProductsDto {
   @IsString()
   variantId: string;
 
-  @ApiProperty({ example: '10' })
+  @ApiProperty({ example: 100 })
+  @IsNotEmpty()
+  @IsNumber()
+  price: number;
+}
+
+class ProductQuantityDto {
+  @ApiProperty({ example: 'abcdeif' })
+  @IsNotEmpty()
+  @IsString()
+  productId: string;
+
+  @ApiProperty({ example: 10, description: 'Offered quantity for this product in the window.' })
   @IsNotEmpty()
   @IsNumber()
   qnty: number;
@@ -39,11 +51,6 @@ class ShareCatalogProductsDto {
   @IsNotEmpty()
   @IsEnum(ProductUnits)
   qntyUnit: ProductUnits;
-
-  @ApiProperty({ example: 100 })
-  @IsNotEmpty()
-  @IsNumber()
-  price: number;
 }
 
 export class CreateShareCatlaogDto {
@@ -58,6 +65,12 @@ export class CreateShareCatlaogDto {
   @ValidateNested({ each: true })
   @Type(() => ShareCatalogProductsDto)
   shareCatalogProducts: ShareCatalogProductsDto[];
+
+  @ApiProperty({ type: [ProductQuantityDto], description: 'Per-product offered stock for the window.' })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductQuantityDto)
+  productQuantities: ProductQuantityDto[];
 
   @ApiProperty({
     example: ['mon', 'wed', 'fri'],

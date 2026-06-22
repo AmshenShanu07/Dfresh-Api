@@ -3,12 +3,13 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { formatInTimeZone } from 'date-fns-tz';
+import { In } from 'typeorm';
 import { ShareCatalog } from './entities/share-catalog.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { User } from '../users/entities/user.entity';
-import { UserTypes } from 'src/common/enums';
+import { UserTypes, ShareCatalogStatus } from 'src/common/enums';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
-import { ShareCatlaogService } from './share-catlaog.service';
+import { ShareCatlaogService, ENABLED_STATUSES } from './share-catlaog.service';
 import { IST_TZ, computeCurrentWindowStart } from './share-catlaog.window';
 
 @Injectable()
@@ -34,7 +35,7 @@ export class ShareCatalogCronService {
     );
 
     const activeCatalogs = await this.shareCatalogRepository.find({
-      where: { isActive: true, isDeleted: false },
+      where: { status: In(ENABLED_STATUSES), isDeleted: false },
       relations: { ShareCatalogProducts: true },
     });
 
@@ -46,19 +47,20 @@ export class ShareCatalogCronService {
         catalog.endTime,
       );
       const inWindow = windowStart !== null;
+      const isLive = catalog.status === ShareCatalogStatus.LIVE;
       const alreadyFired =
         catalog.lastWindowOpenedAt != null &&
         windowStart != null &&
         catalog.lastWindowOpenedAt.getTime() >= windowStart.getTime();
 
-      if (inWindow && !catalog.isPublished && !alreadyFired) {
+      if (inWindow && !isLive && !alreadyFired) {
         await this.openCatalog(catalog);
-        catalog.isPublished = true;
+        catalog.status = ShareCatalogStatus.LIVE;
         catalog.lastWindowOpenedAt = windowStart;
         await this.shareCatalogRepository.save(catalog);
-      } else if (!inWindow && catalog.isPublished) {
+      } else if (!inWindow && isLive) {
         await this.shareCatlaogService.closeCatalog(catalog);
-        catalog.isPublished = false;
+        catalog.status = ShareCatalogStatus.ACTIVE;
         await this.shareCatalogRepository.save(catalog);
         this.logger.log(`Share catalog ${catalog.id} window closed`);
       }

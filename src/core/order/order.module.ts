@@ -5,12 +5,24 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.entity';
 import { User } from '../users/entities/user.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
+import { Products } from '../product/entities/product.entity';
+import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
+import { ShareCatalogProductStock } from '../share-catlaog/entities/share-catalog-product-stock.entity';
 import { JwtService } from '@nestjs/jwt';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([OrderDetails, OrderItems, DeliveryDetails, User, ProductVariant]),
+    TypeOrmModule.forFeature([
+      OrderDetails,
+      OrderItems,
+      DeliveryDetails,
+      User,
+      ProductVariant,
+      Products,
+      ShareCatalog,
+      ShareCatalogProductStock,
+    ]),
     WhatsappModule,
   ],
   controllers: [OrderController],

@@ -60,6 +60,9 @@ export class Products {
   @OneToMany('ShareCatalogProducts', 'product')
   ShareCatalogProducts: any[];
 
+  @OneToMany('ShareCatalogProductStock', 'product')
+  ShareCatalogProductStock: any[];
+
   @ManyToMany('Outlets', 'products')
   Outlets: any[];
 

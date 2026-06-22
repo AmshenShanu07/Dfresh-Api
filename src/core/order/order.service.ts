@@ -5,7 +5,16 @@ import { Repository } from 'typeorm';
 import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.entity';
 import { User } from '../users/entities/user.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
-import { OrderStatus, PaymentMethod, PaymentStatus, UserTypes } from 'src/common/enums';
+import { Products } from '../product/entities/product.entity';
+import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
+import { ShareCatalogProductStock } from '../share-catlaog/entities/share-catalog-product-stock.entity';
+import {
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  ShareCatalogStatus,
+  UserTypes,
+} from 'src/common/enums';
 
 @Injectable()
 export class OrderService {
@@ -20,7 +29,100 @@ export class OrderService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(ProductVariant)
     private readonly productVariantRepository: Repository<ProductVariant>,
+    @InjectRepository(Products)
+    private readonly productRepository: Repository<Products>,
+    @InjectRepository(ShareCatalog)
+    private readonly shareCatalogRepository: Repository<ShareCatalog>,
+    @InjectRepository(ShareCatalogProductStock)
+    private readonly shareCatalogProductStockRepository: Repository<ShareCatalogProductStock>,
   ) {}
+
+  /**
+   * Deducts confirmed order quantities (variant weight x qty, in grams) from
+   * both the product master stock and the live share-catalog allocation.
+   * Idempotent via the OrderDetails.stockDeducted flag. If the live catalog
+   * runs out of sellable products, it is auto-paused.
+   */
+  private async applyStockDeduction(orderId: string) {
+    const order = await this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+      relations: { orderItems: { variant: true } },
+    });
+    if (!order || order.stockDeducted) return;
+
+    // Mark first to guard against concurrent/duplicate confirmations.
+    await this.orderDetailsRepository.update(orderId, { stockDeducted: true });
+
+    const live = await this.shareCatalogRepository.findOne({
+      where: { status: ShareCatalogStatus.LIVE, isDeleted: false },
+      relations: { ShareCatalogProductStock: true },
+    });
+
+    for (const item of order.orderItems ?? []) {
+      const weight = item.variant?.weight ?? 0;
+      const grams = weight * (item.quantity ?? 0);
+      if (grams <= 0) continue;
+
+      await this.productRepository.decrement(
+        { id: item.productId },
+        'totalQuantity',
+        grams,
+      );
+
+      if (live) {
+        const stock = (live.ShareCatalogProductStock ?? []).find(
+          (s: any) => s.productId === item.productId,
+        );
+        if (stock) {
+          stock.remainingGrams = Math.max(0, stock.remainingGrams - grams);
+          await this.shareCatalogProductStockRepository.save(stock);
+        }
+      }
+    }
+
+    if (live) {
+      await this.pauseIfExhausted(live.id);
+    }
+  }
+
+  /** Auto-pauses the live catalog when no product fits its remaining stock. */
+  private async pauseIfExhausted(catalogId: string) {
+    const catalog = await this.shareCatalogRepository.findOne({
+      where: { id: catalogId },
+      relations: {
+        ShareCatalogProducts: { variant: true },
+        ShareCatalogProductStock: true,
+      },
+    });
+    if (!catalog || catalog.status !== ShareCatalogStatus.LIVE) return;
+
+    const remainingByProduct = new Map<string, number>();
+    for (const s of catalog.ShareCatalogProductStock ?? []) {
+      remainingByProduct.set(s.productId, s.remainingGrams);
+    }
+    const anySellable = (catalog.ShareCatalogProducts ?? []).some((scp: any) => {
+      const remaining = remainingByProduct.get(scp.productId) ?? 0;
+      const weight = scp.variant?.weight ?? Infinity;
+      return remaining > 0 && weight <= remaining;
+    });
+
+    if (!anySellable) {
+      const variantIds = (catalog.ShareCatalogProducts ?? [])
+        .filter((scp: any) => scp.variantId)
+        .map((scp: any) => scp.variantId);
+      if (variantIds.length) {
+        await this.productVariantRepository
+          .createQueryBuilder()
+          .update(ProductVariant)
+          .set({ isActive: false })
+          .whereInIds(variantIds)
+          .execute();
+      }
+      await this.shareCatalogRepository.update(catalogId, {
+        status: ShareCatalogStatus.PAUSED,
+      });
+    }
+  }
 
   async createOrder(phone: string, products: any[]) {
     try {
@@ -126,6 +228,7 @@ export class OrderService {
 
   async confirmOrder(id: string) {
     await this.orderDetailsRepository.update(id, { status: OrderStatus.CONFIRMED });
+    await this.applyStockDeduction(id);
     return { success: true };
   }
 
@@ -204,6 +307,10 @@ export class OrderService {
 
     await this.orderDetailsRepository.update(orderId, updates);
 
+    if (updates.status === OrderStatus.CONFIRMED) {
+      await this.applyStockDeduction(orderId);
+    }
+
     return this.orderDetailsRepository.findOne({
       where: { id: orderId },
       relations: { orderItems: { product: true }, deliveryDetails: true },
@@ -250,6 +357,8 @@ export class OrderService {
       paymentStatus: PaymentStatus.VERIFIED,
       status: OrderStatus.CONFIRMED,
     });
+
+    await this.applyStockDeduction(orderId);
 
     return this.orderDetailsRepository.findOne({
       where: { id: orderId },

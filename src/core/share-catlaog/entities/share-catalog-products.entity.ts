@@ -7,8 +7,9 @@ import {
   ManyToMany,
   JoinColumn,
 } from 'typeorm';
-import { ProductUnits } from 'src/common/enums';
 
+// Per-variant sale price for a share catalog. Quantity is no longer tracked
+// here — stock is allocated per product in ShareCatalogProductStock.
 @Entity('ShareCatalogProducts')
 export class ShareCatalogProducts {
   @PrimaryGeneratedColumn('uuid')
@@ -22,12 +23,6 @@ export class ShareCatalogProducts {
 
   @Column({ type: 'varchar', nullable: true, default: null })
   variantId: string;
-
-  @Column({ type: 'float' })
-  qnty: number;
-
-  @Column({ type: 'enum', enum: ProductUnits })
-  qntyUnit: ProductUnits;
 
   @Column({ type: 'float' })
   price: number;

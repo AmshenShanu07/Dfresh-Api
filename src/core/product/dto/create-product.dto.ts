@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { ProductUnits } from 'src/common/enums';
 import { CreateProductVariantDto } from './create-product-variant.dto';
 
 export class CreateProductDto {
@@ -34,6 +35,16 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean()
   cutting?: boolean;
+
+  @ApiProperty({ description: 'Initial stock quantity (in totalQuantityUnit)', example: 5, required: false })
+  @IsOptional()
+  @IsNumber()
+  totalQuantity?: number;
+
+  @ApiProperty({ description: 'Unit of the stock quantity', enum: ProductUnits, example: ProductUnits.KG, required: false })
+  @IsOptional()
+  @IsEnum(ProductUnits)
+  totalQuantityUnit?: ProductUnits;
 
   @ApiProperty({ description: 'Variants to create along with the product', type: [CreateProductVariantDto], required: false })
   @IsOptional()

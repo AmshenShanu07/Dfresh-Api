@@ -9,6 +9,7 @@ import { Purchase } from './entities/purchase.entity';
 import { Products } from '../product/entities/product.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
 import { User } from '../users/entities/user.entity';
+import { toGrams } from 'src/common/utils/units';
 
 @Injectable()
 export class PurchaseService {
@@ -50,7 +51,7 @@ export class PurchaseService {
     await this.productRepository.increment(
       { id: createPurchaseDto.productId },
       'totalQuantity',
-      createPurchaseDto.quantity,
+      toGrams(createPurchaseDto.quantity, createPurchaseDto.quantityUnit),
     );
 
     return purchase;

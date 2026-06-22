@@ -12,6 +12,13 @@ export enum ProductUnits {
   G = 'G',
 }
 
+export enum ShareCatalogStatus {
+  INACTIVE = 'INACTIVE',
+  ACTIVE = 'ACTIVE',
+  LIVE = 'LIVE',
+  PAUSED = 'PAUSED',
+}
+
 export enum OrderStatus {
   DRAFT = 'DRAFT',
   PENDING = 'PENDING',
