@@ -339,14 +339,42 @@ export class WhatsappService {
         this.isEntrySellable(catalog, e),
     );
 
-    // Dedupe by product, preserving first-seen order.
-    const seen = new Set<string>();
-    const products: { id: string; name: string }[] = [];
+    // Group by product, preserving first-seen order, and track the lowest
+    // per-kg price across each product's weight variants for the row subtitle.
+    type ProductRow = {
+      id: string;
+      name: string;
+      cleaning: boolean;
+      cutting: boolean;
+      minPricePerKg: number | null;
+      fallbackPrice: number;
+    };
+    const order: string[] = [];
+    const byProduct = new Map<string, ProductRow>();
     for (const e of entries) {
-      if (seen.has(e.productId)) continue;
-      seen.add(e.productId);
-      products.push({ id: e.productId, name: e.product.name });
+      let agg = byProduct.get(e.productId);
+      if (!agg) {
+        agg = {
+          id: e.productId,
+          name: e.product.name,
+          cleaning: !!e.product.cleaning,
+          cutting: !!e.product.cutting,
+          minPricePerKg: null,
+          fallbackPrice: e.price,
+        };
+        byProduct.set(e.productId, agg);
+        order.push(e.productId);
+      }
+      // Variant weights are stored in grams; normalise price to a per-kg rate.
+      const grams = e.variant?.weight;
+      if (grams && grams > 0) {
+        const perKg = (e.price * 1000) / grams;
+        if (agg.minPricePerKg === null || perKg < agg.minPricePerKg) {
+          agg.minPricePerKg = perKg;
+        }
+      }
     }
+    const products = order.map((id) => byProduct.get(id)!);
 
     if (products.length === 0) {
       return this.sendText(phone, 'No products available right now.');
@@ -354,7 +382,7 @@ export class WhatsappService {
 
     const LIST_MAX = 10;
     const PAGE_SIZE = 9;
-    let pageProducts: { id: string; name: string }[];
+    let pageProducts: ProductRow[];
     let moreRow = false;
 
     if (products.length <= LIST_MAX) {
@@ -371,6 +399,7 @@ export class WhatsappService {
     const rows: any[] = pageProducts.map((p) => ({
       id: `pickWeight~${p.id}`,
       title: this.truncate(p.name, 24),
+      description: this.buildProductSubtitle(p),
     }));
     if (moreRow) {
       rows.push({ id: `prodPage~${page + 1}`, title: 'More products' });
@@ -859,6 +888,31 @@ export class WhatsappService {
 
   private formatWeight(variant: any): string {
     return `${variant.weight} ${variant.unit}`;
+  }
+
+  /**
+   * Grey subtitle line for a product row: lowest per-kg price plus which prep
+   * options (cleaning/cutting) the product supports. Falls back to the raw
+   * entry price when no variant weight is available, and shows a dash when the
+   * product supports neither prep option.
+   */
+  private buildProductSubtitle(p: {
+    cleaning: boolean;
+    cutting: boolean;
+    minPricePerKg: number | null;
+    fallbackPrice: number;
+  }): string {
+    const price =
+      p.minPricePerKg !== null
+        ? `₹${Math.round(p.minPricePerKg)}/kg`
+        : `₹${p.fallbackPrice}`;
+
+    const options: string[] = [];
+    if (p.cleaning) options.push('🧼 Cleaning');
+    if (p.cutting) options.push('🔪 Cutting');
+    const optionsPart = options.length ? options.join(' · ') : '—';
+
+    return this.truncate(`${price} · ${optionsPart}`, 72);
   }
 
   private truncate(text: string, max: number): string {
