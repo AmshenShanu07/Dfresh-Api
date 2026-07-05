@@ -210,8 +210,7 @@ export class ProductService {
       for (const variantDto of createProductDto.variants) {
         this.validateVariantCuttingStyles(styleIds, variantDto.cuttingStyles);
 
-        const weightInGrams =
-          variantDto.unit === 'kg' ? variantDto.weight * 1000 : variantDto.weight;
+        const weightInGrams = toGrams(variantDto.weight, variantDto.unit);
 
         const variant = await this.variantRepository.save(
           this.variantRepository.create({
@@ -242,7 +241,7 @@ export class ProductService {
     const styleIds = await this.getProductStyleIds(productId);
     this.validateVariantCuttingStyles(styleIds, dto.cuttingStyles);
 
-    const weightInGrams = dto.unit === 'kg' ? dto.weight * 1000 : dto.weight;
+    const weightInGrams = toGrams(dto.weight, dto.unit);
 
     const variant = await this.variantRepository.save(
       this.variantRepository.create({
@@ -283,7 +282,7 @@ export class ProductService {
     if (dto.unit !== undefined) updateData.unit = dto.unit;
     if (dto.weight !== undefined) {
       const unit = dto.unit ?? variant.unit;
-      updateData.weight = unit === 'kg' ? dto.weight * 1000 : dto.weight;
+      updateData.weight = toGrams(dto.weight, unit);
     }
     if (dto.cleaningCharge !== undefined) {
       updateData.cleaningCharge = variant.product.cleaning ? dto.cleaningCharge : 0;

@@ -95,7 +95,6 @@ export class WhatsappService {
           }
           existingUser.name = text.slice(0, 100);
           await this.userRepository.save(existingUser);
-          await this.sendWelcomeMessage(existingUser.name, phone);
           return this.promptWardIfNoAddress(existingUser.id, phone);
         }
         return this.sendNamePromptMessage(phone, true);
@@ -917,6 +916,12 @@ export class WhatsappService {
   }
 
   private formatWeight(variant: any): string {
+    // Weights are stored in grams. When the display unit is kg, convert the
+    // number (e.g. 1500 -> 1.5 kg); otherwise show the raw gram value (500 g).
+    if (String(variant.unit).trim().toLowerCase() === 'kg') {
+      const kg = parseFloat((variant.weight / 1000).toFixed(3));
+      return `${kg} kg`;
+    }
     return `${variant.weight} ${variant.unit}`;
   }
 
@@ -1254,6 +1259,42 @@ export class WhatsappService {
       `📦 *Your Order:*\n${itemLines}\n\n` +
       `*Total Amount: ₹${order.totalAmount}*\n\n` +
       `📍 *Delivery Address:*\n${addressLines}\n\n` +
+      `_Further order updates will be notified to you on WhatsApp._`;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'text',
+      text: { body },
+    };
+
+    await this.waInstance.post('/messages', payload);
+  }
+
+  /**
+   * Notifies the customer when an admin moves their order to a customer-facing
+   * milestone (CONFIRMED or DISPATCHED). DISPATCHED is surfaced as
+   * "out for delivery" in the copy.
+   */
+  async sendOrderStatusUpdateMessage(phone: string, order: any) {
+    if (!order) return;
+
+    const shortId = String(order.id ?? '').slice(0, 8).toUpperCase();
+
+    let headline: string;
+    if (order.status === 'CONFIRMED') {
+      headline = '✅ *Your order has been confirmed!*';
+    } else if (order.status === 'DISPATCHED') {
+      headline = '🚚 *Your order is out for delivery!*';
+    } else {
+      // Not a customer-facing milestone; nothing to send.
+      return;
+    }
+
+    const body =
+      `${headline}\n\n` +
+      `Order *#${shortId}*\n` +
+      `*Total Amount: ₹${order.totalAmount}*\n\n` +
       `_Further order updates will be notified to you on WhatsApp._`;
 
     const payload = {

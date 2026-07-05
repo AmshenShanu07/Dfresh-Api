@@ -237,6 +237,54 @@ export class OrderService {
     return { success: true };
   }
 
+  /**
+   * Single-call update from the admin order-detail page: persists the chosen
+   * status and per-item cleaned weights. Returns the fully-loaded order plus a
+   * `statusChanged` flag so the caller can decide whether to notify the
+   * customer. Cleaned weight is record-only and never touches pricing.
+   */
+  async updateOrderDetails(
+    id: string,
+    dto: {
+      status?: OrderStatus;
+      items?: {
+        id: string;
+        cleanedWeight: number | null;
+        cleanedWeightUnit: string | null;
+      }[];
+    },
+  ) {
+    const existing = await this.orderDetailsRepository.findOne({
+      where: { id },
+      relations: { user: true, deliveryDetails: true },
+    });
+    if (!existing) return null;
+
+    // Persist cleaned weights, guarding to items that belong to this order.
+    for (const item of dto.items ?? []) {
+      await this.orderItemsRepository.update(
+        { id: item.id, orderId: id },
+        {
+          cleanedWeight: item.cleanedWeight,
+          cleanedWeightUnit: item.cleanedWeightUnit,
+        },
+      );
+    }
+
+    const statusChanged =
+      dto.status != null && dto.status !== existing.status;
+
+    if (statusChanged) {
+      await this.orderDetailsRepository.update(id, { status: dto.status });
+      if (dto.status === OrderStatus.CONFIRMED) {
+        await this.applyStockDeduction(id);
+      }
+    }
+
+    const order = await this.findOne(id);
+    return { order, statusChanged };
+  }
+
   async updateOrderAddress(addressData: any) {
     try {
       await this.deliveryDetailsRepository.save(
