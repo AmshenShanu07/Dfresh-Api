@@ -12,7 +12,32 @@ import {
   IsString,
   Matches,
   ValidateNested,
+  registerDecorator,
+  ValidationOptions,
+  ValidationArguments,
 } from 'class-validator';
+
+/** Fails when the decorated property equals the named sibling property. */
+function IsNotEqualTo(property: string, validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: 'isNotEqualTo',
+      target: object.constructor,
+      propertyName,
+      constraints: [property],
+      options: validationOptions,
+      validator: {
+        validate(value: any, args: ValidationArguments) {
+          const [related] = args.constraints;
+          return value !== (args.object as any)[related];
+        },
+        defaultMessage(args: ValidationArguments) {
+          return `${args.property} must not equal ${args.constraints[0]}`;
+        },
+      },
+    });
+  };
+}
 
 export const WEEKDAY_CODES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 export type WeekdayCode = (typeof WEEKDAY_CODES)[number];
@@ -94,5 +119,8 @@ export class CreateShareCatlaogDto {
   @IsNotEmpty()
   @IsString()
   @Matches(TIME_HHMM_REGEX, { message: 'endTime must match HH:MM (24h)' })
+  @IsNotEqualTo('startTime', {
+    message: 'endTime must not equal startTime (window would be always-open)',
+  })
   endTime: string;
 }

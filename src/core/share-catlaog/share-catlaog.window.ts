@@ -48,6 +48,62 @@ export function computeCurrentWindowStart(
   return null;
 }
 
+/** A weekly schedule window, as stored on a ShareCatalog. */
+export interface ScheduleWindow {
+  daysOfWeek: string[];
+  startTime: string;
+  endTime: string;
+}
+
+const MINUTES_PER_DAY = 24 * 60;
+const MINUTES_PER_WEEK = 7 * MINUTES_PER_DAY;
+
+function toMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+/**
+ * Expands a schedule into half-open [lo, hi) minute intervals on a weekly
+ * timeline (Sun 00:00 = 0 .. Sat 23:59 = 10079). Overnight windows
+ * (endTime <= startTime) spill into the next day and wrap Sat -> Sun.
+ */
+function expandToWeeklyIntervals(w: ScheduleWindow): [number, number][] {
+  const s = toMinutes(w.startTime);
+  const e = toMinutes(w.endTime);
+  const intervals: [number, number][] = [];
+  for (const code of w.daysOfWeek) {
+    const dayIdx = WEEKDAYS.indexOf(code.toLowerCase() as (typeof WEEKDAYS)[number]);
+    if (dayIdx < 0) continue;
+    const base = dayIdx * MINUTES_PER_DAY;
+    const lo = base + s;
+    const hi = base + (e > s ? e : MINUTES_PER_DAY + e);
+    if (hi <= MINUTES_PER_WEEK) {
+      intervals.push([lo, hi]);
+    } else {
+      intervals.push([lo, MINUTES_PER_WEEK]);
+      intervals.push([0, hi - MINUTES_PER_WEEK]);
+    }
+  }
+  return intervals;
+}
+
+/**
+ * True if two weekly schedule windows overlap in time on any shared occurrence.
+ * Day-aware (different weekdays never conflict) and back-to-back safe: touching
+ * edges (one ends 12:00, the next starts 12:00) do NOT count as an overlap.
+ */
+export function windowsOverlap(a: ScheduleWindow, b: ScheduleWindow): boolean {
+  const intervalsA = expandToWeeklyIntervals(a);
+  const intervalsB = expandToWeeklyIntervals(b);
+  for (const [aLo, aHi] of intervalsA) {
+    for (const [bLo, bHi] of intervalsB) {
+      if (aLo < bHi && bLo < aHi) return true;
+    }
+  }
+  return false;
+}
+
 export function computeNextWindowStart(
   now: Date,
   daysOfWeek: string[],

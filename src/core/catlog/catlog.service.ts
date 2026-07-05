@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { CreateCatlogDto } from './dto/create-catlog.dto';
 import { RemoveCatlogProductDto } from '../category/dto/remove-product.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
@@ -8,6 +12,7 @@ import { Repository } from 'typeorm';
 import { Catalog } from './entities/catalog.entity';
 import { CatalogProducts } from './entities/catalog-products.entity';
 import { CatalogProductVariants } from './entities/catalog-product-variants.entity';
+import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
 
 @Injectable()
 export class CatlogService {
@@ -18,6 +23,8 @@ export class CatlogService {
     private readonly catalogProductsRepository: Repository<CatalogProducts>,
     @InjectRepository(CatalogProductVariants)
     private readonly catalogProductVariantsRepository: Repository<CatalogProductVariants>,
+    @InjectRepository(ShareCatalog)
+    private readonly shareCatalogRepository: Repository<ShareCatalog>,
   ) {}
 
   async create(createCatlogDto: CreateCatlogDto) {
@@ -174,7 +181,48 @@ export class CatlogService {
     return this.catalogRepository.update(id, { isDeleted: true });
   }
 
-  hardDelete(id: string) {
+  /**
+   * Permanently deletes a catalog and its child rows. Blocked if any non-deleted
+   * ShareCatalog still references it. No DB cascades exist, so children are cleaned
+   * manually (variants -> products -> catalog), matching the `update`/`removeProduct`
+   * pattern, plus the `_CatalogToShareCatalogProducts` join is detached first.
+   */
+  async hardDelete(id: string) {
+    const catalog = await this.catalogRepository.findOne({
+      where: { id },
+      relations: { ShareCatalogProducts: true },
+    });
+    if (!catalog) {
+      throw new BadRequestException('Catalog not found');
+    }
+
+    const referencingShareCatalogs = await this.shareCatalogRepository.count({
+      where: { catalogId: id, isDeleted: false },
+    });
+    if (referencingShareCatalogs > 0) {
+      throw new ConflictException(
+        'Cannot delete: catalog is used by one or more share catalogs. Delete those first.',
+      );
+    }
+
+    // Detach ManyToMany join (_CatalogToShareCatalogProducts) to avoid FK errors.
+    if (catalog.ShareCatalogProducts?.length) {
+      await this.catalogRepository
+        .createQueryBuilder()
+        .relation(Catalog, 'ShareCatalogProducts')
+        .of(id)
+        .remove(catalog.ShareCatalogProducts);
+    }
+
+    // Delete children in order: variants -> products.
+    const catalogProducts = await this.catalogProductsRepository.find({
+      where: { catalogId: id },
+    });
+    for (const cp of catalogProducts) {
+      await this.catalogProductVariantsRepository.delete({ catalogProductId: cp.id });
+    }
+    await this.catalogProductsRepository.delete({ catalogId: id });
+
     return this.catalogRepository.delete(id);
   }
 }

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateShareCatlaogDto } from './dto/create-share-catlaog.dto';
 import { UpdateShareCatlaogDto } from './dto/update-share-catlaog.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
@@ -11,11 +15,19 @@ import { Products } from '../product/entities/product.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { ShareCatalogStatus } from 'src/common/enums';
 import { toGrams } from 'src/common/utils/units';
+import { ScheduleWindow, windowsOverlap } from './share-catlaog.window';
 
 /** Statuses the cron/customer flow treats as "enabled". */
 export const ENABLED_STATUSES = [
   ShareCatalogStatus.ACTIVE,
   ShareCatalogStatus.LIVE,
+];
+
+/** Statuses that occupy a time slot and thus block an overlapping schedule. */
+export const SLOT_OCCUPYING_STATUSES = [
+  ShareCatalogStatus.ACTIVE,
+  ShareCatalogStatus.LIVE,
+  ShareCatalogStatus.PAUSED,
 ];
 
 @Injectable()
@@ -40,18 +52,13 @@ export class ShareCatlaogService {
   } as const;
 
   async create(createShareCatlaogDto: CreateShareCatlaogDto) {
-    // Demote any currently-enabled catalog — only one is enabled at a time.
-    const previous = await this.shareCatalogRepository.find({
-      where: { status: In(ENABLED_STATUSES), isDeleted: false },
-      relations: { ShareCatalogProducts: true },
+    // Multiple catalogs may be enabled at once as long as their schedule
+    // windows don't overlap.
+    await this.assertNoOverlap({
+      daysOfWeek: createShareCatlaogDto.daysOfWeek,
+      startTime: createShareCatlaogDto.startTime,
+      endTime: createShareCatlaogDto.endTime,
     });
-    for (const cat of previous) {
-      if (cat.status === ShareCatalogStatus.LIVE) {
-        await this.closeCatalog(cat);
-      }
-      cat.status = ShareCatalogStatus.INACTIVE;
-      await this.shareCatalogRepository.save(cat);
-    }
 
     const shareCatalog = await this.shareCatalogRepository.save(
       this.shareCatalogRepository.create({
@@ -118,18 +125,14 @@ export class ShareCatlaogService {
     }
 
     if (active) {
-      const others = await this.shareCatalogRepository.find({
-        where: { status: In(ENABLED_STATUSES), isDeleted: false },
-        relations: { ShareCatalogProducts: true },
-      });
-      for (const other of others) {
-        if (other.id === id) continue;
-        if (other.status === ShareCatalogStatus.LIVE) {
-          await this.closeCatalog(other);
-        }
-        other.status = ShareCatalogStatus.INACTIVE;
-        await this.shareCatalogRepository.save(other);
-      }
+      await this.assertNoOverlap(
+        {
+          daysOfWeek: catalog.daysOfWeek,
+          startTime: catalog.startTime,
+          endTime: catalog.endTime,
+        },
+        id,
+      );
 
       catalog.status = ShareCatalogStatus.ACTIVE;
       catalog.lastWindowOpenedAt = new Date();
@@ -142,6 +145,27 @@ export class ShareCatlaogService {
 
     await this.shareCatalogRepository.save(catalog);
     return catalog;
+  }
+
+  /**
+   * Throws if `window` overlaps the schedule of any other slot-occupying
+   * catalog (ACTIVE / LIVE / PAUSED). `excludeId` skips the catalog itself when
+   * re-validating on activate/update.
+   */
+  private async assertNoOverlap(window: ScheduleWindow, excludeId?: string) {
+    const others = await this.shareCatalogRepository.find({
+      where: { status: In(SLOT_OCCUPYING_STATUSES), isDeleted: false },
+      relations: { catalog: true },
+    });
+    for (const other of others) {
+      if (other.id === excludeId) continue;
+      if (windowsOverlap(window, other)) {
+        throw new ConflictException(
+          `Schedule overlaps "${other.catalog?.name ?? other.id}" ` +
+            `(${other.daysOfWeek.join(',')} ${other.startTime}-${other.endTime})`,
+        );
+      }
+    }
   }
 
   /** Deactivates a catalog's variants when its window closes. */
@@ -257,10 +281,29 @@ export class ShareCatlaogService {
       throw new NotFoundException(`ShareCatalog ${id} not found`);
     }
 
+    const scheduleChanged =
+      dto.daysOfWeek !== undefined ||
+      dto.startTime !== undefined ||
+      dto.endTime !== undefined;
+
     if (dto.catalogId !== undefined) catalog.catalogId = dto.catalogId;
     if (dto.daysOfWeek !== undefined) catalog.daysOfWeek = dto.daysOfWeek;
     if (dto.startTime !== undefined) catalog.startTime = dto.startTime;
     if (dto.endTime !== undefined) catalog.endTime = dto.endTime;
+
+    // Re-validate the resulting window only while the catalog occupies a slot;
+    // an INACTIVE catalog's schedule is checked when it is next activated.
+    if (scheduleChanged && SLOT_OCCUPYING_STATUSES.includes(catalog.status)) {
+      await this.assertNoOverlap(
+        {
+          daysOfWeek: catalog.daysOfWeek,
+          startTime: catalog.startTime,
+          endTime: catalog.endTime,
+        },
+        id,
+      );
+    }
+
     await this.shareCatalogRepository.save(catalog);
 
     // Rebuild product/price + stock rows when the caller supplies them.
@@ -294,8 +337,39 @@ export class ShareCatlaogService {
     });
   }
 
+  /**
+   * Permanently deletes a share catalog and its child rows. If the catalog is LIVE
+   * its variants are deactivated first (mirrors `setActive(false)` -> `closeCatalog`)
+   * so products stop showing to customers. No DB cascades exist, so children are
+   * cleaned manually, and the `_CatalogToShareCatalogProducts` join is detached first.
+   */
   async remove(id: string) {
-    await this.shareCatalogRepository.update(id, { isDeleted: true });
+    const catalog = await this.shareCatalogRepository.findOne({
+      where: { id },
+      relations: { ShareCatalogProducts: true },
+    });
+    if (!catalog) {
+      throw new NotFoundException(`ShareCatalog ${id} not found`);
+    }
+
+    if (catalog.status === ShareCatalogStatus.LIVE) {
+      await this.closeCatalog(catalog);
+    }
+
+    // Detach ManyToMany join (_CatalogToShareCatalogProducts, column B = ShareCatalogProducts.id)
+    // to avoid FK errors when deleting the ShareCatalogProducts rows below.
+    const scpIds = (catalog.ShareCatalogProducts ?? []).map((scp) => scp.id);
+    if (scpIds.length) {
+      await this.shareCatalogProductsRepository.query(
+        'DELETE FROM "_CatalogToShareCatalogProducts" WHERE "B" = ANY($1)',
+        [scpIds],
+      );
+    }
+
+    await this.shareCatalogProductsRepository.delete({ shareCatalogId: id });
+    await this.shareCatalogProductStockRepository.delete({ shareCatalogId: id });
+    await this.shareCatalogRepository.delete(id);
+
     return { success: true };
   }
 }
