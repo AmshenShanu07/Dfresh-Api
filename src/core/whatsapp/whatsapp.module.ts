@@ -14,9 +14,10 @@ import { ShareCatalogProducts } from '../share-catlaog/entities/share-catalog-pr
 import { ShareCatalogProductStock } from '../share-catlaog/entities/share-catalog-product-stock.entity';
 import { Cart, CartItem } from '../cart/entities/cart.entity';
 import { CartService } from '../cart/cart.service';
+import { WardModule } from '../ward/ward.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, UserAddress, Products, ProductVariant, OrderDetails, OrderItems, DeliveryDetails, Category, ShareCatalog, ShareCatalogProducts, ShareCatalogProductStock, Cart, CartItem])],
+  imports: [TypeOrmModule.forFeature([User, UserAddress, Products, ProductVariant, OrderDetails, OrderItems, DeliveryDetails, Category, ShareCatalog, ShareCatalogProducts, ShareCatalogProductStock, Cart, CartItem]), WardModule],
   controllers: [WhatsappController],
   providers: [WhatsappService, OrderService, UploadService, CartService],
   exports: [WhatsappService],

@@ -17,9 +17,11 @@ import { Category } from '../category/entities/category.entity';
 import { UploadService } from '../upload/upload.service';
 import { Cart, CartItem } from '../cart/entities/cart.entity';
 import { CartService } from '../cart/cart.service';
+import { WardModule } from '../ward/ward.module';
 
 @Module({
   imports: [
+    WardModule,
     TypeOrmModule.forFeature([
       ShareCatalog,
       ShareCatalogProducts,

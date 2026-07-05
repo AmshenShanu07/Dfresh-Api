@@ -1,14 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { PartialType } from '@nestjs/swagger';
+import { CreateWardDto } from './create-ward.dto';
 
-export class UpdateWardDto {
-  @ApiProperty({ example: '1', required: false })
-  @IsOptional()
-  @IsString()
-  wardNumber?: string;
-
-  @ApiProperty({ example: 'FORT KOCHI', required: false })
-  @IsOptional()
-  @IsString()
-  name?: string;
-}
+export class UpdateWardDto extends PartialType(CreateWardDto) {}

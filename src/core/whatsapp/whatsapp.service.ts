@@ -10,6 +10,7 @@ import { PaymentMethod, ShareCatalogStatus, UserTypes } from 'src/common/enums';
 import { OrderService } from '../order/order.service';
 import { UploadService } from '../upload/upload.service';
 import { CartService } from '../cart/cart.service';
+import { WardService } from '../ward/ward.service';
 import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
 import {
   IST_TZ,
@@ -36,6 +37,7 @@ export class WhatsappService {
     private orderService: OrderService,
     private uploadService: UploadService,
     private cartService: CartService,
+    private wardService: WardService,
   ) {
     this.botToken = this.configService.get<string>('BOT_TOKEN');
     this.tgChatId = this.configService.get<string>('TG_CHAT_ID');
@@ -93,7 +95,8 @@ export class WhatsappService {
           }
           existingUser.name = text.slice(0, 100);
           await this.userRepository.save(existingUser);
-          return this.sendWelcomeMessage(existingUser.name, phone);
+          await this.sendWelcomeMessage(existingUser.name, phone);
+          return this.promptWardIfNoAddress(existingUser.id, phone);
         }
         return this.sendNamePromptMessage(phone, true);
       }
@@ -108,7 +111,8 @@ export class WhatsappService {
 
       if (type == 'text') {
         console.log('Text received', data.entry[0].changes[0].value.messages[0].text);
-        return this.sendWelcomeMessage(existingUser.name, phone);
+        await this.sendWelcomeMessage(existingUser.name, phone);
+        return this.promptWardIfNoAddress(existingUser.id, phone);
       }
 
       if (type == 'interactive') {
@@ -258,6 +262,12 @@ export class WhatsappService {
         return this.handleRemoveCartItem(phone, parts[0]);
       case 'cartBuyNow':
         return this.checkoutCart(phone);
+      case 'pickWard':
+        // parts: [wardId, orderId?]
+        return this.sendAddressFlowForm(phone, parts[0], parts[1]);
+      case 'wardPage':
+        // parts: [page, orderId?]
+        return this.sendWardList(phone, parseInt(parts[0], 10) || 0, parts[1]);
     }
 
     // Legacy hyphen-prefixed actions (catalog entry / address / payment)
@@ -266,7 +276,7 @@ export class WhatsappService {
     } else if (replyId.startsWith('confirmAddress-')) {
       return this.handleConfirmAddress(phone, replyId.replace('confirmAddress-', ''));
     } else if (replyId.startsWith('addAddress-')) {
-      return this.sendAddressFlowForm(phone, replyId.replace('addAddress-', ''));
+      return this.sendWardList(phone, 0, replyId.replace('addAddress-', ''));
     } else if (replyId.startsWith('selectPaymentCOD-')) {
       return this.handleSelectCOD(phone, replyId.replace('selectPaymentCOD-', ''));
     } else if (replyId.startsWith('selectPaymentUPI-')) {
@@ -951,14 +961,122 @@ export class WhatsappService {
       if (existingAddress) {
         await this.sendAddressConfirmationButtons(phone, order.id, existingAddress);
       } else {
-        await this.sendAddressFlowForm(phone, order.id);
+        await this.sendWardList(phone, 0, order.id);
       }
     } catch (error) {
       console.error('Error creating order:', error);
     }
   }
 
-  private async sendAddressFlowForm(phone: string, orderId: string) {
+  /**
+   * Prompts the customer to pick a ward if they don't have a saved address yet.
+   * Used right after the welcome message to onboard the delivery address.
+   */
+  private async promptWardIfNoAddress(userId: string, phone: string) {
+    const existingAddress = await this.userAddressRepository.findOne({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+    if (!existingAddress) {
+      await this.sendWardList(phone);
+    }
+  }
+
+  /**
+   * Sends an interactive list of active wards. The picked ward is carried into
+   * the address Flow form via the reply id (`pickWard~<wardId>[~<orderId>]`).
+   * `orderId` is present only in the checkout path; onboarding omits it.
+   */
+  async sendWardList(phone: string, page = 0, orderId?: string) {
+    const wards = await this.wardService.findAllActive();
+
+    // No wards configured yet — fall straight through to the address form so the
+    // customer is never blocked.
+    if (wards.length === 0) {
+      return this.sendAddressFlowForm(phone, null, orderId);
+    }
+
+    const LIST_MAX = 10;
+    const PAGE_SIZE = 9;
+    let pageWards: typeof wards;
+    let moreRow = false;
+
+    if (wards.length <= LIST_MAX) {
+      pageWards = wards;
+    } else {
+      const start = page * PAGE_SIZE;
+      pageWards = wards.slice(start, start + PAGE_SIZE);
+      if (pageWards.length === 0) {
+        return this.sendWardList(phone, 0, orderId); // out-of-range page, restart
+      }
+      moreRow = start + PAGE_SIZE < wards.length;
+    }
+
+    const suffix = orderId ? `~${orderId}` : '';
+    const rows: any[] = pageWards.map((w) => ({
+      id: `pickWard~${w.id}${suffix}`,
+      title: this.truncate(`Ward ${w.wardNumber}`, 24),
+      description: this.truncate(`${w.localBodyName}, ${w.districtName}`, 72),
+    }));
+    if (moreRow) {
+      rows.push({ id: `wardPage~${page + 1}${suffix}`, title: 'More wards' });
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        header: { type: 'text', text: 'Select your ward' },
+        body: { text: 'Choose the ward your delivery address falls under.' },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          button: 'Select Ward',
+          sections: [{ title: 'Active Wards', rows }],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Ward list sent:', response.data);
+  }
+
+  /**
+   * Builds the address Flow `flow_token`, carrying the picked ward (and the
+   * order id at checkout) so both can be recovered in `receiveAddress`.
+   * Onboarding: `WARD:<wardId>` · Checkout: `<orderId>|WARD:<wardId>`.
+   */
+  private buildAddressFlowToken(wardId: string | null, orderId?: string): string {
+    const parts: string[] = [];
+    if (orderId) parts.push(orderId);
+    parts.push(`WARD:${wardId ?? ''}`);
+    return parts.join('|');
+  }
+
+  private parseAddressFlowToken(token: string): {
+    wardId: string | null;
+    orderId: string | null;
+  } {
+    if (!token) return { wardId: null, orderId: null };
+    if (token.includes('|')) {
+      const [first, second = ''] = token.split('|');
+      const wardId = second.startsWith('WARD:') ? second.slice(5) || null : null;
+      return { wardId, orderId: first || null };
+    }
+    if (token.startsWith('WARD:')) {
+      return { wardId: token.slice(5) || null, orderId: null };
+    }
+    // Legacy token = plain orderId (no ward).
+    return { wardId: null, orderId: token };
+  }
+
+  private async sendAddressFlowForm(
+    phone: string,
+    wardId: string | null,
+    orderId?: string,
+  ) {
     const payload = {
       messaging_product: 'whatsapp',
       to: phone,
@@ -973,7 +1091,7 @@ export class WhatsappService {
             flow_message_version: '3',
             flow_id: '902959149367544',
             flow_cta: 'Enter Address',
-            flow_token: orderId,
+            flow_token: this.buildAddressFlowToken(wardId, orderId),
           },
         },
       },
@@ -1035,7 +1153,7 @@ export class WhatsappService {
       });
 
       if (!address) {
-        return this.sendAddressFlowForm(phone, orderId);
+        return this.sendAddressFlowForm(phone, null, orderId);
       }
 
       const order = await this.orderService.confirmOrderWithAddress(orderId, {
@@ -1056,6 +1174,9 @@ export class WhatsappService {
   async receiveAddress(phone: string, addressJsonString: string) {
     try {
       const addressData = JSON.parse(addressJsonString);
+      const { wardId, orderId } = this.parseAddressFlowToken(
+        addressData.flow_token,
+      );
 
       const user = await this.userRepository.findOne({ where: { phone } });
       if (user) {
@@ -1066,13 +1187,19 @@ export class WhatsappService {
             address: addressData.address,
             pinCode: addressData.pincode,
             phone: addressData.phone,
+            wardId: wardId ?? null,
           }),
         );
       }
 
-      const order = await this.orderService.updateOrderAddress(addressData);
-      if (order) {
-        await this.sendPaymentMethodButtons(phone, order.id, order.totalAmount);
+      // Only the checkout path carries an order id — advance it to payment.
+      // Onboarding (no order) just saves the address and stops here.
+      if (orderId) {
+        addressData.flow_token = orderId;
+        const order = await this.orderService.updateOrderAddress(addressData);
+        if (order) {
+          await this.sendPaymentMethodButtons(phone, order.id, order.totalAmount);
+        }
       }
     } catch (error) {
       console.error('Error receiving address:', error);

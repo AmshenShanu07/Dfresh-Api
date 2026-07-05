@@ -1,13 +1,40 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+} from 'typeorm';
+import { ConstituencyType } from 'src/common/enums';
 
 @Entity('Ward')
 export class Ward {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar', unique: true })
-  wardNumber: string;
+  @Column({ type: 'int' })
+  districtId: number;
 
   @Column({ type: 'varchar' })
-  name: string;
+  districtName: string;
+
+  @Column({ type: 'enum', enum: ConstituencyType })
+  constituencyType: ConstituencyType;
+
+  @Column({ type: 'varchar' })
+  localBodyId: string;
+
+  @Column({ type: 'varchar' })
+  localBodyName: string;
+
+  @Column({ type: 'varchar' })
+  wardNumber: string;
+
+  @Column({ type: 'boolean', default: true })
+  isActive: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  isDeleted: boolean;
+
+  @CreateDateColumn()
+  createdAt: Date;
 }

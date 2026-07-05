@@ -68,6 +68,9 @@ export class UserAddress {
   @Column({ type: 'varchar', default: '' })
   phone: string;
 
+  @Column({ type: 'varchar', nullable: true, default: null })
+  wardId: string;
+
   @CreateDateColumn()
   createdAt: Date;
 
