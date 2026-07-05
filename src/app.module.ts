@@ -12,6 +12,7 @@ import { ShareCatlaogModule } from './core/share-catlaog/share-catlaog.module';
 import { UploadModule } from './core/upload/upload.module';
 import { OrderModule } from './core/order/order.module';
 import { WardModule } from './core/ward/ward.module';
+import { CuttingStyleModule } from './core/cutting-style/cutting-style.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 @Module({
@@ -42,6 +43,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
     UploadModule,
     OrderModule,
     WardModule,
+    CuttingStyleModule,
   ],
 })
 export class AppModule {}

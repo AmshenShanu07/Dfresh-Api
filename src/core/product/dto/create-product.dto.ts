@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
 import { ProductUnits } from 'src/common/enums';
 import { CreateProductVariantDto } from './create-product-variant.dto';
 
@@ -35,6 +35,16 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean()
   cutting?: boolean;
+
+  @ApiProperty({
+    description: 'Cutting style master ids this product offers (product-level)',
+    example: ['b3f1c2d4-...'],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  cuttingStyleIds?: string[];
 
   @ApiProperty({ description: 'Initial stock quantity (in totalQuantityUnit)', example: 5, required: false })
   @IsOptional()

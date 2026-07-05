@@ -1,27 +1,24 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
-  ArrayMinSize,
   IsArray,
-  IsBoolean,
   IsIn,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
   ValidateNested,
 } from 'class-validator';
-import { CUTTING_STYLES } from 'src/common/constants';
 
 export class CuttingStyleDto {
-  @ApiProperty({ example: 'Curry', enum: CUTTING_STYLES })
+  @ApiProperty({ example: 'b3f1c2d4-...', description: 'Cutting style master id' })
   @IsNotEmpty()
-  @IsString()
-  @IsIn(CUTTING_STYLES as unknown as string[])
-  style: string;
+  @IsUUID()
+  cuttingStyleId: string;
 
-  @ApiProperty({ example: 40 })
+  @ApiProperty({ example: 40, description: 'Price for this style on this variant' })
   @IsNotEmpty()
   @IsNumber()
   @Min(0)
@@ -41,26 +38,25 @@ export class CreateProductVariantDto {
   @IsIn(['g', 'kg'])
   unit: 'g' | 'kg';
 
-  @ApiProperty({ example: false, required: false })
-  @IsOptional()
-  @IsBoolean()
-  cleaning?: boolean;
-
-  @ApiProperty({ example: 10, required: false, description: 'Flat cleaning charge, applied when cleaning is enabled' })
+  @ApiProperty({
+    example: 10,
+    required: false,
+    description:
+      'Cleaning charge for this variant, applied when the product has cleaning enabled',
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
   cleaningCharge?: number;
 
-  @ApiProperty({ example: false, required: false })
-  @IsOptional()
-  @IsBoolean()
-  cutting?: boolean;
-
-  @ApiProperty({ type: [CuttingStyleDto], required: false, description: 'Cutting styles offered for this variant, with per-style price' })
+  @ApiProperty({
+    type: [CuttingStyleDto],
+    required: false,
+    description:
+      "Per-style prices for this variant. Style ids must be within the product's selected cutting styles.",
+  })
   @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => CuttingStyleDto)
   cuttingStyles?: CuttingStyleDto[];
@@ -79,21 +75,11 @@ export class UpdateProductVariantDto {
   @IsIn(['g', 'kg'])
   unit?: 'g' | 'kg';
 
-  @ApiProperty({ example: false, required: false })
-  @IsOptional()
-  @IsBoolean()
-  cleaning?: boolean;
-
   @ApiProperty({ example: 10, required: false })
   @IsOptional()
   @IsNumber()
   @Min(0)
   cleaningCharge?: number;
-
-  @ApiProperty({ example: false, required: false })
-  @IsOptional()
-  @IsBoolean()
-  cutting?: boolean;
 
   @ApiProperty({ type: [CuttingStyleDto], required: false })
   @IsOptional()

@@ -51,6 +51,9 @@ export class Products {
   @OneToMany('ProductVariants', 'product')
   variants: any[];
 
+  @OneToMany('ProductCuttingStyle', 'product')
+  productCuttingStyles: any[];
+
   @OneToMany('CatalogProducts', 'product')
   CatalogProducts: any[];
 

@@ -1,15 +1,22 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { CreateProductVariantDto, UpdateProductVariantDto } from './dto/create-product-variant.dto';
+import {
+  CreateProductVariantDto,
+  UpdateProductVariantDto,
+  CuttingStyleDto,
+} from './dto/create-product-variant.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Products } from './entities/product.entity';
-import { ProductVariant, VariantCuttingStyle } from './entities/product-variant.entity';
+import {
+  ProductVariant,
+  VariantCuttingStyle,
+} from './entities/product-variant.entity';
+import { ProductCuttingStyle } from './entities/product-cutting-style.entity';
+import { CuttingStyle } from '../cutting-style/entities/cutting-style.entity';
 import { Category } from '../category/entities/category.entity';
-import { CUTTING_STYLES } from 'src/common/constants';
-import { CuttingStyleDto } from './dto/create-product-variant.dto';
 import { ProductUnits } from 'src/common/enums';
 import { toGrams } from 'src/common/utils/units';
 
@@ -21,77 +28,168 @@ export class ProductService {
     @InjectRepository(ProductVariant)
     private readonly variantRepository: Repository<ProductVariant>,
     @InjectRepository(VariantCuttingStyle)
-    private readonly cuttingStyleRepository: Repository<VariantCuttingStyle>,
+    private readonly variantCuttingStyleRepository: Repository<VariantCuttingStyle>,
+    @InjectRepository(ProductCuttingStyle)
+    private readonly productCuttingStyleRepository: Repository<ProductCuttingStyle>,
+    @InjectRepository(CuttingStyle)
+    private readonly cuttingStyleMasterRepository: Repository<CuttingStyle>,
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
   ) {}
 
+  // ---- Cutting-style helpers ------------------------------------------------
+
+  /** Returns the subset of the given ids that are active, non-deleted master styles. */
+  private async getActiveMasterStyleIds(ids: string[]): Promise<Set<string>> {
+    if (!ids?.length) return new Set();
+    const found = await this.cuttingStyleMasterRepository.find({
+      where: { id: In(ids), isActive: true, isDeleted: false },
+    });
+    return new Set(found.map((s) => s.id));
+  }
+
   /**
-   * Validates a variant's cleaning/cutting config against its parent product
-   * and the master cutting-style list. Throws BadRequestException on violation.
+   * Validates and normalises the product-level cutting styles. Returns [] when
+   * the product has cutting disabled; otherwise the deduped list of valid ids.
    */
-  private validateVariantCharges(
-    product: Products,
-    cfg: {
-      cleaning?: boolean;
-      cutting?: boolean;
-      cuttingStyles?: CuttingStyleDto[];
-    },
-  ) {
-    if (cfg.cleaning && !product.cleaning) {
+  private async resolveProductStyleIds(
+    cutting: boolean,
+    cuttingStyleIds?: string[],
+  ): Promise<string[]> {
+    if (!cutting) return [];
+    const ids = [...new Set(cuttingStyleIds ?? [])];
+    if (!ids.length) return [];
+    const activeIds = await this.getActiveMasterStyleIds(ids);
+    const invalid = ids.filter((id) => !activeIds.has(id));
+    if (invalid.length) {
       throw new BadRequestException(
-        'Variant cleaning requires the product to have cleaning enabled',
+        `Invalid or inactive cutting style id(s): ${invalid.join(', ')}`,
       );
     }
-    if (cfg.cutting) {
-      if (!product.cutting) {
+    return ids;
+  }
+
+  /** Ids of the cutting styles a product currently offers. */
+  private async getProductStyleIds(productId: string): Promise<string[]> {
+    const rows = await this.productCuttingStyleRepository.find({
+      where: { productId, isDeleted: false },
+    });
+    return rows.map((r) => r.cuttingStyleId);
+  }
+
+  /** Every supplied variant price must reference a style the product offers. */
+  private validateVariantCuttingStyles(
+    productStyleIds: string[],
+    cuttingStyles?: CuttingStyleDto[],
+  ) {
+    if (!cuttingStyles?.length) return;
+    const allowed = new Set(productStyleIds);
+    for (const cs of cuttingStyles) {
+      if (!allowed.has(cs.cuttingStyleId)) {
         throw new BadRequestException(
-          'Variant cutting requires the product to have cutting enabled',
+          `Cutting style ${cs.cuttingStyleId} is not offered by this product`,
         );
-      }
-      if (!cfg.cuttingStyles?.length) {
-        throw new BadRequestException(
-          'At least one cutting style is required when cutting is enabled',
-        );
-      }
-      for (const cs of cfg.cuttingStyles) {
-        if (!(CUTTING_STYLES as readonly string[]).includes(cs.style)) {
-          throw new BadRequestException(`Invalid cutting style: ${cs.style}`);
-        }
       }
     }
   }
 
-  /** Replaces the active cutting styles for a variant with the given list. */
-  private async saveCuttingStyles(
+  /** Replaces the product's offered cutting styles with the given set. */
+  private async saveProductCuttingStyles(productId: string, styleIds: string[]) {
+    await this.productCuttingStyleRepository.delete({ productId });
+    if (styleIds.length) {
+      await this.productCuttingStyleRepository.save(
+        styleIds.map((cuttingStyleId) =>
+          this.productCuttingStyleRepository.create({ productId, cuttingStyleId }),
+        ),
+      );
+    }
+  }
+
+  /**
+   * Rebuilds a variant's per-style prices so it mirrors the product's styles.
+   * A row is written for each product style, using the supplied price (or 0).
+   */
+  private async saveVariantCuttingStyles(
     variantId: string,
-    cutting: boolean,
+    productStyleIds: string[],
     cuttingStyles?: CuttingStyleDto[],
   ) {
-    // Remove any existing styles, then insert the new set (only when cutting).
-    await this.cuttingStyleRepository.delete({ variantId });
-    if (cutting && cuttingStyles?.length) {
-      await this.cuttingStyleRepository.save(
-        cuttingStyles.map((cs) =>
-          this.cuttingStyleRepository.create({
+    await this.variantCuttingStyleRepository.delete({ variantId });
+    if (productStyleIds.length) {
+      const priceMap = new Map(
+        (cuttingStyles ?? []).map((cs) => [cs.cuttingStyleId, cs.price]),
+      );
+      await this.variantCuttingStyleRepository.save(
+        productStyleIds.map((cuttingStyleId) =>
+          this.variantCuttingStyleRepository.create({
             variantId,
-            style: cs.style,
-            price: cs.price,
+            cuttingStyleId,
+            price: priceMap.get(cuttingStyleId) ?? 0,
           }),
         ),
       );
     }
   }
 
+  /**
+   * Keeps every variant of a product in sync with the product's style set:
+   * adds missing styles (price 0) and removes styles no longer offered, while
+   * preserving prices for styles that remain.
+   */
+  private async syncVariantStylesForProduct(
+    productId: string,
+    styleIds: string[],
+  ) {
+    const variants = await this.variantRepository.find({
+      where: { productId, isDeleted: false },
+    });
+    const target = new Set(styleIds);
+
+    for (const variant of variants) {
+      const existing = await this.variantCuttingStyleRepository.find({
+        where: { variantId: variant.id },
+      });
+      const existingIds = new Set(existing.map((e) => e.cuttingStyleId));
+
+      const toAdd = styleIds.filter((id) => !existingIds.has(id));
+      if (toAdd.length) {
+        await this.variantCuttingStyleRepository.save(
+          toAdd.map((cuttingStyleId) =>
+            this.variantCuttingStyleRepository.create({
+              variantId: variant.id,
+              cuttingStyleId,
+              price: 0,
+            }),
+          ),
+        );
+      }
+
+      const toRemove = existing
+        .filter((e) => !target.has(e.cuttingStyleId))
+        .map((e) => e.cuttingStyleId);
+      if (toRemove.length) {
+        await this.variantCuttingStyleRepository.delete({
+          variantId: variant.id,
+          cuttingStyleId: In(toRemove),
+        });
+      }
+    }
+  }
+
+  // ---- Product / variant CRUD ----------------------------------------------
+
   async create(createProductDto: CreateProductDto) {
+    const cleaning = createProductDto.cleaning ?? false;
+    const cutting = createProductDto.cutting ?? false;
+
     const product = await this.productRepository.save(
       this.productRepository.create({
         name: createProductDto.name,
         description: createProductDto.description,
         image: createProductDto.image,
         categoryId: createProductDto.categoryId,
-        cleaning: createProductDto.cleaning ?? false,
-        cutting: createProductDto.cutting ?? false,
+        cleaning,
+        cutting,
         totalQuantity:
           createProductDto.totalQuantity != null
             ? toGrams(
@@ -102,32 +200,37 @@ export class ProductService {
       }),
     );
 
+    const styleIds = await this.resolveProductStyleIds(
+      cutting,
+      createProductDto.cuttingStyleIds,
+    );
+    await this.saveProductCuttingStyles(product.id, styleIds);
+
     if (createProductDto.variants?.length) {
       for (const variantDto of createProductDto.variants) {
-        this.validateVariantCharges(product, variantDto);
+        this.validateVariantCuttingStyles(styleIds, variantDto.cuttingStyles);
 
-        const weightInGrams = variantDto.unit === 'kg' ? variantDto.weight * 1000 : variantDto.weight;
+        const weightInGrams =
+          variantDto.unit === 'kg' ? variantDto.weight * 1000 : variantDto.weight;
 
         const variant = await this.variantRepository.save(
           this.variantRepository.create({
             productId: product.id,
             weight: weightInGrams,
             unit: variantDto.unit,
-            cleaning: variantDto.cleaning ?? false,
-            cleaningCharge: variantDto.cleaning ? variantDto.cleaningCharge ?? 0 : 0,
-            cutting: variantDto.cutting ?? false,
+            cleaningCharge: cleaning ? variantDto.cleaningCharge ?? 0 : 0,
           }),
         );
 
-        await this.saveCuttingStyles(
+        await this.saveVariantCuttingStyles(
           variant.id,
-          variantDto.cutting ?? false,
+          styleIds,
           variantDto.cuttingStyles,
         );
       }
     }
 
-    return product;
+    return this.findOne(product.id);
   }
 
   async createVariant(productId: string, dto: CreateProductVariantDto) {
@@ -136,7 +239,8 @@ export class ProductService {
     });
     if (!product) throw new BadRequestException('Product not found');
 
-    this.validateVariantCharges(product, dto);
+    const styleIds = await this.getProductStyleIds(productId);
+    this.validateVariantCuttingStyles(styleIds, dto.cuttingStyles);
 
     const weightInGrams = dto.unit === 'kg' ? dto.weight * 1000 : dto.weight;
 
@@ -145,24 +249,22 @@ export class ProductService {
         productId,
         weight: weightInGrams,
         unit: dto.unit,
-        cleaning: dto.cleaning ?? false,
-        cleaningCharge: dto.cleaning ? dto.cleaningCharge ?? 0 : 0,
-        cutting: dto.cutting ?? false,
+        cleaningCharge: product.cleaning ? dto.cleaningCharge ?? 0 : 0,
       }),
     );
 
-    await this.saveCuttingStyles(variant.id, dto.cutting ?? false, dto.cuttingStyles);
+    await this.saveVariantCuttingStyles(variant.id, styleIds, dto.cuttingStyles);
 
     return this.variantRepository.findOne({
       where: { id: variant.id },
-      relations: { cuttingStyles: true },
+      relations: { cuttingStyles: { cuttingStyle: true } },
     });
   }
 
   findVariants(productId: string) {
     return this.variantRepository.find({
       where: { productId, isDeleted: false },
-      relations: { cuttingStyles: true },
+      relations: { cuttingStyles: { cuttingStyle: true } },
       order: { createdAt: 'ASC' },
     });
   }
@@ -174,14 +276,8 @@ export class ProductService {
     });
     if (!variant) throw new BadRequestException('Variant not found');
 
-    // Resolve the effective cleaning/cutting state for validation.
-    const cleaning = dto.cleaning ?? variant.cleaning;
-    const cutting = dto.cutting ?? variant.cutting;
-    this.validateVariantCharges(variant.product, {
-      cleaning,
-      cutting,
-      cuttingStyles: dto.cuttingStyles,
-    });
+    const styleIds = await this.getProductStyleIds(variant.productId);
+    this.validateVariantCuttingStyles(styleIds, dto.cuttingStyles);
 
     const updateData: Partial<ProductVariant> = {};
     if (dto.unit !== undefined) updateData.unit = dto.unit;
@@ -189,23 +285,21 @@ export class ProductService {
       const unit = dto.unit ?? variant.unit;
       updateData.weight = unit === 'kg' ? dto.weight * 1000 : dto.weight;
     }
-    if (dto.cleaning !== undefined) updateData.cleaning = dto.cleaning;
-    if (dto.cleaning === false) updateData.cleaningCharge = 0;
-    else if (dto.cleaningCharge !== undefined) updateData.cleaningCharge = dto.cleaningCharge;
-    if (dto.cutting !== undefined) updateData.cutting = dto.cutting;
+    if (dto.cleaningCharge !== undefined) {
+      updateData.cleaningCharge = variant.product.cleaning ? dto.cleaningCharge : 0;
+    }
 
-    await this.variantRepository.update(variantId, updateData);
+    if (Object.keys(updateData).length) {
+      await this.variantRepository.update(variantId, updateData);
+    }
 
-    // Rebuild cutting styles only when the caller supplied them or disabled cutting.
-    if (dto.cutting === false) {
-      await this.saveCuttingStyles(variantId, false);
-    } else if (dto.cuttingStyles !== undefined) {
-      await this.saveCuttingStyles(variantId, cutting, dto.cuttingStyles);
+    if (dto.cuttingStyles !== undefined) {
+      await this.saveVariantCuttingStyles(variantId, styleIds, dto.cuttingStyles);
     }
 
     return this.variantRepository.findOne({
       where: { id: variantId },
-      relations: { cuttingStyles: true },
+      relations: { cuttingStyles: { cuttingStyle: true } },
     });
   }
 
@@ -220,7 +314,11 @@ export class ProductService {
   findOne(id: string) {
     return this.productRepository.findOne({
       where: { id },
-      relations: { variants: { cuttingStyles: true }, category: true },
+      relations: {
+        variants: { cuttingStyles: { cuttingStyle: true } },
+        productCuttingStyles: { cuttingStyle: true },
+        category: true,
+      },
     });
   }
 
@@ -237,7 +335,11 @@ export class ProductService {
       this.productRepository.count({ where: { isDeleted: false } }),
       this.productRepository.find({
         where: { isDeleted: false },
-        relations: { category: true, variants: true },
+        relations: {
+          category: true,
+          variants: { cuttingStyles: { cuttingStyle: true } },
+          productCuttingStyles: { cuttingStyle: true },
+        },
         order: {
           createdAt: filter.sortOrder === -1 ? 'ASC' : 'DESC',
         },
@@ -251,10 +353,12 @@ export class ProductService {
 
   async update(id: string, updateProductDto: UpdateProductDto) {
     const existing = await this.productRepository.findOne({ where: { id } });
+    if (!existing) throw new BadRequestException('Product not found');
 
-    // Stock is stored in grams; convert from the supplied display unit and
-    // strip the unit field so it isn't blindly assigned onto the entity.
-    const { totalQuantity, totalQuantityUnit, ...rest } = updateProductDto;
+    // Stock is stored in grams; convert from the supplied display unit. Strip
+    // fields that need special handling so they aren't blindly assigned.
+    const { totalQuantity, totalQuantityUnit, cuttingStyleIds, variants, ...rest } =
+      updateProductDto;
     Object.assign(existing, rest);
     if (totalQuantity != null) {
       existing.totalQuantity = toGrams(
@@ -265,7 +369,27 @@ export class ProductService {
 
     const product = await this.productRepository.save(existing);
 
-    return product;
+    // Resolve the product's target cutting styles and keep variants in sync.
+    let targetStyleIds: string[];
+    if (!product.cutting) {
+      targetStyleIds = [];
+    } else if (cuttingStyleIds !== undefined) {
+      targetStyleIds = await this.resolveProductStyleIds(true, cuttingStyleIds);
+    } else {
+      targetStyleIds = await this.getProductStyleIds(product.id);
+    }
+    await this.saveProductCuttingStyles(product.id, targetStyleIds);
+    await this.syncVariantStylesForProduct(product.id, targetStyleIds);
+
+    // If cleaning was turned off, clear residual cleaning charges on variants.
+    if (!product.cleaning) {
+      await this.variantRepository.update(
+        { productId: product.id },
+        { cleaningCharge: 0 },
+      );
+    }
+
+    return this.findOne(product.id);
   }
 
   softDelete(id: string) {

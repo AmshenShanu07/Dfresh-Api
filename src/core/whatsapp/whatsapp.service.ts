@@ -294,7 +294,7 @@ export class WhatsappService {
       relations: {
         ShareCatalogProducts: {
           product: true,
-          variant: { cuttingStyles: true },
+          variant: { cuttingStyles: { cuttingStyle: true } },
         },
         ShareCatalogProductStock: true,
       },
@@ -491,7 +491,8 @@ export class WhatsappService {
       return this.sendProductList(phone);
     }
 
-    if (!entry.variant.cleaning) {
+    // Cleaning is a product-level capability; every variant carries a charge.
+    if (!entry.product.cleaning) {
       return this.askCutting(phone, variantId, 'n');
     }
 
@@ -513,7 +514,8 @@ export class WhatsappService {
       return this.sendProductList(phone);
     }
 
-    if (!entry.variant.cutting) {
+    // Cutting is a product-level capability offered by all its variants.
+    if (!entry.product.cutting) {
       return this.sendItemSummary(phone, variantId, clean, 'n', 'none');
     }
 
@@ -532,8 +534,13 @@ export class WhatsappService {
       return this.sendProductList(phone);
     }
 
+    // Only surface styles whose master record is still active.
     const styles = (entry.variant.cuttingStyles ?? []).filter(
-      (s: any) => !s.isDeleted,
+      (s: any) =>
+        !s.isDeleted &&
+        s.cuttingStyle &&
+        s.cuttingStyle.isActive &&
+        !s.cuttingStyle.isDeleted,
     );
 
     if (styles.length === 0) {
@@ -542,8 +549,8 @@ export class WhatsappService {
     }
 
     const rows = styles.slice(0, 10).map((s: any) => ({
-      id: `cutopt~${variantId}~${clean}~${s.style}`,
-      title: this.truncate(s.style, 24),
+      id: `cutopt~${variantId}~${clean}~${s.cuttingStyleId}`,
+      title: this.truncate(s.cuttingStyle.name, 24),
       description: s.price > 0 ? `+₹${s.price}` : 'Free',
     }));
 
@@ -595,10 +602,9 @@ export class WhatsappService {
       lines.push(`Cleaning: +₹${cleaningCharge}`);
     }
     if (cut === 'y') {
-      const label =
-        cuttingOption && cuttingOption !== 'none'
-          ? `Cutting (${cuttingOption})`
-          : 'Cutting';
+      // cuttingOption carries the cutting-style id; resolve its display name.
+      const styleName = this.getCuttingStyleName(entry.variant, cuttingOption);
+      const label = styleName ? `Cutting (${styleName})` : 'Cutting';
       lines.push(`${label}: +₹${cuttingCharge}`);
     }
 
@@ -652,13 +658,18 @@ export class WhatsappService {
       return this.sendProductList(phone);
     }
 
-    const resolvedCuttingOption =
+    // The reply payload carries the cutting-style id; resolve its display name
+    // (snapshotted onto the cart/order) and price server-side. Charges are never
+    // trusted from the interactive reply payload.
+    const resolvedStyleId =
       cut === 'y' && cuttingOption && cuttingOption !== 'none'
         ? cuttingOption
         : null;
+    const cuttingStyleName = this.getCuttingStyleName(
+      entry.variant,
+      resolvedStyleId,
+    );
 
-    // Charges are resolved server-side from the variant, never trusted from the
-    // interactive reply payload.
     const cart = await this.cartService.addItem(phone, {
       variantId,
       productId: entry.variant.productId,
@@ -666,9 +677,9 @@ export class WhatsappService {
       cleaning: clean === 'y',
       cleaningCharge: clean === 'y' ? entry.variant.cleaningCharge ?? 0 : 0,
       cutting: cut === 'y',
-      cuttingOption: resolvedCuttingOption,
+      cuttingOption: cuttingStyleName,
       cuttingCharge:
-        cut === 'y' ? this.getCuttingPrice(entry.variant, resolvedCuttingOption) : 0,
+        cut === 'y' ? this.getCuttingPrice(entry.variant, resolvedStyleId) : 0,
     });
 
     if (!cart) {
@@ -816,13 +827,22 @@ export class WhatsappService {
     await this.cartService.clearCart(cart.id);
   }
 
-  /** Returns the price of a cutting style on a variant, or 0 if not found. */
-  private getCuttingPrice(variant: any, style: string | null): number {
-    if (!style || style === 'none') return 0;
+  /** Returns the price of a cutting style (by master id) on a variant, or 0. */
+  private getCuttingPrice(variant: any, styleId: string | null): number {
+    if (!styleId || styleId === 'none') return 0;
     const match = (variant?.cuttingStyles ?? []).find(
-      (s: any) => !s.isDeleted && s.style === style,
+      (s: any) => !s.isDeleted && s.cuttingStyleId === styleId,
     );
     return match?.price ?? 0;
+  }
+
+  /** Returns the display name of a cutting style (by master id) on a variant. */
+  private getCuttingStyleName(variant: any, styleId: string | null): string | null {
+    if (!styleId || styleId === 'none') return null;
+    const match = (variant?.cuttingStyles ?? []).find(
+      (s: any) => !s.isDeleted && s.cuttingStyleId === styleId,
+    );
+    return match?.cuttingStyle?.name ?? null;
   }
 
   private async handleCancelItem(phone: string) {
