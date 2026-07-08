@@ -1040,7 +1040,10 @@ export class WhatsappService {
     const suffix = orderId ? `~${orderId}` : '';
     const rows: any[] = pageWards.map((w) => ({
       id: `pickWard~${w.id}${suffix}`,
-      title: this.truncate(`Ward ${w.wardNumber}`, 24),
+      title: this.truncate(
+        w.wardName ? `${w.wardName} (${w.wardNumber})` : `Ward ${w.wardNumber}`,
+        24,
+      ),
       description: this.truncate(`${w.localBodyName}, ${w.districtName}`, 72),
     }));
     if (moreRow) {

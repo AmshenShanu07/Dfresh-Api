@@ -29,6 +29,9 @@ export class Ward {
   @Column({ type: 'varchar' })
   wardNumber: string;
 
+  @Column({ type: 'varchar', default: '' })
+  wardName: string;
+
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 

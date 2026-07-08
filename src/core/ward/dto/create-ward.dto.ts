@@ -62,6 +62,15 @@ export class CreateWardDto {
   wardNumber: string;
 
   @ApiProperty({
+    example: 'Fort Kochi',
+    description: 'Ward name',
+    required: true,
+  })
+  @IsNotEmpty()
+  @IsString()
+  wardName: string;
+
+  @ApiProperty({
     example: true,
     description: 'Whether the ward is active',
     required: false,

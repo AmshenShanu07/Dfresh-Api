@@ -3,6 +3,7 @@ import {
   CanActivate,
   ExecutionContext,
   UnauthorizedException,
+  HttpException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -55,7 +56,10 @@ export class UserAuthGuard implements CanActivate {
 
       return true;
     } catch (e) {
-      throw e;
+      if (e instanceof HttpException) throw e;
+      const message =
+        e?.name === 'TokenExpiredError' ? 'Token Expired' : 'Invalid Token';
+      throw new UnauthorizedException({ statusCode: 401, message });
     }
   }
 }

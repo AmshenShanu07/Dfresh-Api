@@ -37,6 +37,13 @@ export class ProductController {
 
   @ApiBearerAuth()
   @UseGuards(UserAuthGuard)
+  @Get('/all-detailed')
+  findAllDetailed() {
+    return this.productService.findAllDetailed();
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
   @Get('/list')
   getList(@Query() filter: FilterCommonDto) {
     return this.productService.getList(filter);

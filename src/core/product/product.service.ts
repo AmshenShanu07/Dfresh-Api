@@ -310,6 +310,19 @@ export class ProductService {
     return this.productRepository.find({ where: { isDeleted: false } });
   }
 
+  async findAllDetailed() {
+    const [total, data] = await Promise.all([
+      this.productRepository.count({ where: { isDeleted: false } }),
+      this.productRepository.find({
+        where: { isDeleted: false },
+        relations: { category: true },
+        order: { createdAt: 'DESC' },
+      }),
+    ]);
+
+    return { total, data };
+  }
+
   findOne(id: string) {
     return this.productRepository.findOne({
       where: { id },

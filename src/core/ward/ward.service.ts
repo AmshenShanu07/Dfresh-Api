@@ -40,6 +40,7 @@ export class WardService {
         localBodyId: dto.localBodyId,
         localBodyName: dto.localBodyName,
         wardNumber: dto.wardNumber,
+        wardName: dto.wardName,
         isActive: dto.isActive ?? true,
       }),
     );
