@@ -439,7 +439,7 @@ export class WhatsappService {
         body: {
           text: 'Tap a product to see available weights and place your order.',
         },
-        footer: { text: 'Fresh to home™' },
+        footer: { text: 'Daily Fresh™' },
         action: {
           button: 'View Products',
           sections: [{ title: 'Products', rows }],
