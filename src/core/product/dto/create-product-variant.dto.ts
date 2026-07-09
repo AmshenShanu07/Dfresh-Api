@@ -11,6 +11,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { Unit } from '../../../common/utils/units';
 
 export class CuttingStyleDto {
   @ApiProperty({ example: 'b3f1c2d4-...', description: 'Cutting style master id' })
@@ -32,11 +33,11 @@ export class CreateProductVariantDto {
   @Min(1)
   weight: number;
 
-  @ApiProperty({ example: 'g', enum: ['g', 'kg'] })
+  @ApiProperty({ example: 'g', enum: ['g', 'kg', 'ml', 'l', 'count'] })
   @IsNotEmpty()
   @IsString()
-  @IsIn(['g', 'kg'])
-  unit: 'g' | 'kg';
+  @IsIn(['g', 'kg', 'ml', 'l', 'count'])
+  unit: Unit;
 
   @ApiProperty({
     example: 10,
@@ -69,11 +70,11 @@ export class UpdateProductVariantDto {
   @Min(1)
   weight?: number;
 
-  @ApiProperty({ example: 'g', enum: ['g', 'kg'], required: false })
+  @ApiProperty({ example: 'g', enum: ['g', 'kg', 'ml', 'l', 'count'], required: false })
   @IsOptional()
   @IsString()
-  @IsIn(['g', 'kg'])
-  unit?: 'g' | 'kg';
+  @IsIn(['g', 'kg', 'ml', 'l', 'count'])
+  unit?: Unit;
 
   @ApiProperty({ example: 10, required: false })
   @IsOptional()

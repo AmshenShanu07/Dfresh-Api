@@ -6,7 +6,12 @@ import { In, Repository } from 'typeorm';
 import * as QRCode from 'qrcode';
 import { formatInTimeZone } from 'date-fns-tz';
 import { User, UserAddress } from '../users/entities/user.entity';
-import { PaymentMethod, ShareCatalogStatus, UserTypes } from 'src/common/enums';
+import {
+  MeasurementType,
+  PaymentMethod,
+  ShareCatalogStatus,
+  UserTypes,
+} from 'src/common/enums';
 import { OrderService } from '../order/order.service';
 import { UploadService } from '../upload/upload.service';
 import { CartService } from '../cart/cart.service';
@@ -349,13 +354,15 @@ export class WhatsappService {
     );
 
     // Group by product, preserving first-seen order, and track the lowest
-    // per-kg price across each product's weight variants for the row subtitle.
+    // per-unit price across each product's variants for the row subtitle. The
+    // unit depends on the product's measurement family (per kg / per L / piece).
     type ProductRow = {
       id: string;
       name: string;
       cleaning: boolean;
       cutting: boolean;
-      minPricePerKg: number | null;
+      measurementType: MeasurementType;
+      minUnitPrice: number | null;
       fallbackPrice: number;
     };
     const order: string[] = [];
@@ -368,18 +375,25 @@ export class WhatsappService {
           name: e.product.name,
           cleaning: !!e.product.cleaning,
           cutting: !!e.product.cutting,
-          minPricePerKg: null,
+          measurementType:
+            e.product.measurementType ?? MeasurementType.WEIGHT,
+          minUnitPrice: null,
           fallbackPrice: e.price,
         };
         byProduct.set(e.productId, agg);
         order.push(e.productId);
       }
-      // Variant weights are stored in grams; normalise price to a per-kg rate.
-      const grams = e.variant?.weight;
-      if (grams && grams > 0) {
-        const perKg = (e.price * 1000) / grams;
-        if (agg.minPricePerKg === null || perKg < agg.minPricePerKg) {
-          agg.minPricePerKg = perKg;
+      // Amounts are stored in the base unit. For WEIGHT/VOLUME normalise to the
+      // large unit (per kg / per L = price per 1000 base units); for COUNT it's
+      // the per-piece price.
+      const baseAmount = e.variant?.weight;
+      if (baseAmount && baseAmount > 0) {
+        const unitPrice =
+          agg.measurementType === MeasurementType.COUNT
+            ? e.price / baseAmount
+            : (e.price * 1000) / baseAmount;
+        if (agg.minUnitPrice === null || unitPrice < agg.minUnitPrice) {
+          agg.minUnitPrice = unitPrice;
         }
       }
     }
@@ -455,6 +469,9 @@ export class WhatsappService {
     }
 
     const productName = entries[0].product?.name ?? 'Product';
+    const measurementType =
+      entries[0].product?.measurementType ?? MeasurementType.WEIGHT;
+    const noun = this.optionNoun(measurementType); // weight / size / pack
 
     const rows = entries.slice(0, 10).map((e: any) => ({
       id: `pickVariant~${e.variantId}`,
@@ -470,11 +487,13 @@ export class WhatsappService {
       interactive: {
         type: 'list',
         header: { type: 'text', text: this.truncate(productName, 60) },
-        body: { text: 'Choose a weight.' },
+        body: { text: `Choose a ${noun}.` },
         footer: { text: 'Fresh to home™' },
         action: {
-          button: 'Select Weight',
-          sections: [{ title: 'Available Weights', rows }],
+          button: `Select ${this.capitalize(noun)}`,
+          sections: [
+            { title: `Available ${this.capitalize(noun)}s`, rows },
+          ],
         },
       },
     };
@@ -915,31 +934,52 @@ export class WhatsappService {
     });
   }
 
+  /** Customer-facing noun for a product's variant options, by family. */
+  private optionNoun(type: MeasurementType): string {
+    if (type === MeasurementType.VOLUME) return 'size';
+    if (type === MeasurementType.COUNT) return 'pack';
+    return 'weight';
+  }
+
+  private capitalize(text: string): string {
+    return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+  }
+
   private formatWeight(variant: any): string {
-    // Weights are stored in grams. When the display unit is kg, convert the
-    // number (e.g. 1500 -> 1.5 kg); otherwise show the raw gram value (500 g).
-    if (String(variant.unit).trim().toLowerCase() === 'kg') {
-      const kg = parseFloat((variant.weight / 1000).toFixed(3));
-      return `${kg} kg`;
+    // Amounts are stored in the base unit (g / ml / count). kg and L are 1000x
+    // their base unit, so convert the stored number back for display (e.g.
+    // 1500 -> 1.5 kg, 1000 -> 1 L); g / ml / count are shown as-is.
+    const unit = String(variant.unit).trim().toLowerCase();
+    if (unit === 'kg' || unit === 'l') {
+      const value = parseFloat((variant.weight / 1000).toFixed(3));
+      return `${value} ${unit === 'l' ? 'L' : 'kg'}`;
     }
     return `${variant.weight} ${variant.unit}`;
   }
 
   /**
-   * Grey subtitle line for a product row: lowest per-kg price plus which prep
+   * Grey subtitle line for a product row: lowest per-unit price (per kg / per L
+   * / per piece depending on the product's measurement family) plus which prep
    * options (cleaning/cutting) the product supports. Falls back to the raw
-   * entry price when no variant weight is available, and shows a dash when the
+   * entry price when no variant amount is available, and shows a dash when the
    * product supports neither prep option.
    */
   private buildProductSubtitle(p: {
     cleaning: boolean;
     cutting: boolean;
-    minPricePerKg: number | null;
+    measurementType: MeasurementType;
+    minUnitPrice: number | null;
     fallbackPrice: number;
   }): string {
+    const unitSuffix =
+      p.measurementType === MeasurementType.VOLUME
+        ? '/L'
+        : p.measurementType === MeasurementType.COUNT
+          ? '/piece'
+          : '/kg';
     const price =
-      p.minPricePerKg !== null
-        ? `₹${Math.round(p.minPricePerKg)}/kg`
+      p.minUnitPrice !== null
+        ? `₹${Math.round(p.minUnitPrice)}${unitSuffix}`
         : `₹${p.fallbackPrice}`;
 
     const options: string[] = [];

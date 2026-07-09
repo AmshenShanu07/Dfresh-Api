@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { CuttingStyle } from '../../cutting-style/entities/cutting-style.entity';
+import { Unit } from '../../../common/utils/units';
 
 @Entity('ProductVariants')
 export class ProductVariant {
@@ -17,11 +18,16 @@ export class ProductVariant {
   @Column({ type: 'varchar' })
   productId: string;
 
+  /**
+   * Amount in the parent product's base unit (grams for WEIGHT, millilitres for
+   * VOLUME, count for COUNT). Historically named `weight`; kept for compatibility.
+   */
   @Column({ type: 'float' })
   weight: number;
 
-  @Column({ type: 'varchar', length: 2 })
-  unit: 'g' | 'kg';
+  /** Display unit chosen at entry: 'g'|'kg' | 'ml'|'l' | 'count'. */
+  @Column({ type: 'varchar', length: 8, default: 'g' })
+  unit: Unit;
 
   /**
    * Cleaning charge for this variant. Only meaningful when the parent

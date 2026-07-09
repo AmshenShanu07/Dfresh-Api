@@ -14,7 +14,7 @@ import { ShareCatalogProductStock } from './entities/share-catalog-product-stock
 import { Products } from '../product/entities/product.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { ShareCatalogStatus } from 'src/common/enums';
-import { toGrams } from 'src/common/utils/units';
+import { toBase } from 'src/common/utils/units';
 import { ScheduleWindow, windowsOverlap } from './share-catlaog.window';
 
 /** Statuses the cron/customer flow treats as "enabled". */
@@ -104,12 +104,12 @@ export class ShareCatlaogService {
 
     await this.shareCatalogProductStockRepository.save(
       (quantities ?? []).map((q) => {
-        const grams = toGrams(q.qnty, q.qntyUnit);
+        const baseAmount = toBase(q.qnty, q.qntyUnit);
         return this.shareCatalogProductStockRepository.create({
           shareCatalogId,
           productId: q.productId,
-          offeredGrams: grams,
-          remainingGrams: grams,
+          offeredGrams: baseAmount,
+          remainingGrams: baseAmount,
         });
       }),
     );
@@ -320,12 +320,12 @@ export class ShareCatlaogService {
       await this.shareCatalogProductStockRepository.delete({ shareCatalogId: id });
       await this.shareCatalogProductStockRepository.save(
         dto.productQuantities.map((q) => {
-          const grams = toGrams(q.qnty, q.qntyUnit);
+          const baseAmount = toBase(q.qnty, q.qntyUnit);
           return this.shareCatalogProductStockRepository.create({
             shareCatalogId: id,
             productId: q.productId,
-            offeredGrams: grams,
-            remainingGrams: grams,
+            offeredGrams: baseAmount,
+            remainingGrams: baseAmount,
           });
         }),
       );

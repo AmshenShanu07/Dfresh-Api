@@ -17,8 +17,14 @@ import {
 import { ProductCuttingStyle } from './entities/product-cutting-style.entity';
 import { CuttingStyle } from '../cutting-style/entities/cutting-style.entity';
 import { Category } from '../category/entities/category.entity';
-import { ProductUnits } from 'src/common/enums';
-import { toGrams } from 'src/common/utils/units';
+import { MeasurementType } from 'src/common/enums';
+import {
+  toBase,
+  isUnitInFamily,
+  baseUnitFor,
+  unitsFor,
+  Unit,
+} from 'src/common/utils/units';
 
 @Injectable()
 export class ProductService {
@@ -176,11 +182,80 @@ export class ProductService {
     }
   }
 
+  // ---- Unit / measurement helpers ------------------------------------------
+
+  /**
+   * Validates that `unit` belongs to the product's measurement family, and that
+   * COUNT amounts are whole numbers. Throws BadRequestException otherwise.
+   */
+  private validateUnitForType(
+    measurementType: MeasurementType,
+    unit: Unit,
+    amount: number,
+  ) {
+    if (!isUnitInFamily(unit, measurementType)) {
+      throw new BadRequestException(
+        `Unit "${unit}" is not valid for a ${measurementType} product (allowed: ${unitsFor(
+          measurementType,
+        ).join(', ')})`,
+      );
+    }
+    if (
+      measurementType === MeasurementType.COUNT &&
+      !Number.isInteger(Number(amount))
+    ) {
+      throw new BadRequestException('Count must be a whole number');
+    }
+  }
+
+  /**
+   * Remaps a display unit to the equivalent tier in a new measurement family
+   * (large kg/l vs small g/ml). Used when a product's measurementType changes.
+   */
+  private remapUnitToFamily(oldUnit: Unit, newType: MeasurementType): Unit {
+    if (newType === MeasurementType.COUNT) return 'count';
+    const isLarge = ['kg', 'l'].includes(String(oldUnit).toLowerCase());
+    // unitsFor returns [large, small] for WEIGHT/VOLUME.
+    const [large, small] = unitsFor(newType);
+    return isLarge ? large : small;
+  }
+
+  /**
+   * Relabels every variant of a product to units valid for `newType`, keeping
+   * the stored base amount (weight) unchanged. Called when measurementType flips.
+   */
+  private async relabelVariantsForType(
+    productId: string,
+    newType: MeasurementType,
+  ) {
+    const variants = await this.variantRepository.find({ where: { productId } });
+    for (const v of variants) {
+      const newUnit = this.remapUnitToFamily(v.unit, newType);
+      if (newUnit !== v.unit) {
+        await this.variantRepository.update(v.id, { unit: newUnit });
+      }
+    }
+  }
+
   // ---- Product / variant CRUD ----------------------------------------------
 
   async create(createProductDto: CreateProductDto) {
     const cleaning = createProductDto.cleaning ?? false;
     const cutting = createProductDto.cutting ?? false;
+    const measurementType =
+      createProductDto.measurementType ?? MeasurementType.WEIGHT;
+
+    let totalQuantity = 0;
+    if (createProductDto.totalQuantity != null) {
+      const stockUnit = (createProductDto.totalQuantityUnit ??
+        baseUnitFor(measurementType)) as Unit;
+      this.validateUnitForType(
+        measurementType,
+        stockUnit,
+        createProductDto.totalQuantity,
+      );
+      totalQuantity = toBase(createProductDto.totalQuantity, stockUnit);
+    }
 
     const product = await this.productRepository.save(
       this.productRepository.create({
@@ -188,15 +263,10 @@ export class ProductService {
         description: createProductDto.description,
         image: createProductDto.image,
         categoryId: createProductDto.categoryId,
+        measurementType,
         cleaning,
         cutting,
-        totalQuantity:
-          createProductDto.totalQuantity != null
-            ? toGrams(
-                createProductDto.totalQuantity,
-                createProductDto.totalQuantityUnit ?? ProductUnits.G,
-              )
-            : 0,
+        totalQuantity,
       }),
     );
 
@@ -209,13 +279,18 @@ export class ProductService {
     if (createProductDto.variants?.length) {
       for (const variantDto of createProductDto.variants) {
         this.validateVariantCuttingStyles(styleIds, variantDto.cuttingStyles);
+        this.validateUnitForType(
+          measurementType,
+          variantDto.unit,
+          variantDto.weight,
+        );
 
-        const weightInGrams = toGrams(variantDto.weight, variantDto.unit);
+        const amountInBase = toBase(variantDto.weight, variantDto.unit);
 
         const variant = await this.variantRepository.save(
           this.variantRepository.create({
             productId: product.id,
-            weight: weightInGrams,
+            weight: amountInBase,
             unit: variantDto.unit,
             cleaningCharge: cleaning ? variantDto.cleaningCharge ?? 0 : 0,
           }),
@@ -240,13 +315,14 @@ export class ProductService {
 
     const styleIds = await this.getProductStyleIds(productId);
     this.validateVariantCuttingStyles(styleIds, dto.cuttingStyles);
+    this.validateUnitForType(product.measurementType, dto.unit, dto.weight);
 
-    const weightInGrams = toGrams(dto.weight, dto.unit);
+    const amountInBase = toBase(dto.weight, dto.unit);
 
     const variant = await this.variantRepository.save(
       this.variantRepository.create({
         productId,
-        weight: weightInGrams,
+        weight: amountInBase,
         unit: dto.unit,
         cleaningCharge: product.cleaning ? dto.cleaningCharge ?? 0 : 0,
       }),
@@ -278,11 +354,20 @@ export class ProductService {
     const styleIds = await this.getProductStyleIds(variant.productId);
     this.validateVariantCuttingStyles(styleIds, dto.cuttingStyles);
 
+    const measurementType = variant.product.measurementType;
     const updateData: Partial<ProductVariant> = {};
-    if (dto.unit !== undefined) updateData.unit = dto.unit;
+    if (dto.unit !== undefined) {
+      this.validateUnitForType(
+        measurementType,
+        dto.unit,
+        dto.weight ?? variant.weight,
+      );
+      updateData.unit = dto.unit;
+    }
     if (dto.weight !== undefined) {
       const unit = dto.unit ?? variant.unit;
-      updateData.weight = toGrams(dto.weight, unit);
+      this.validateUnitForType(measurementType, unit, dto.weight);
+      updateData.weight = toBase(dto.weight, unit);
     }
     if (dto.cleaningCharge !== undefined) {
       updateData.cleaningCharge = variant.product.cleaning ? dto.cleaningCharge : 0;
@@ -367,19 +452,28 @@ export class ProductService {
     const existing = await this.productRepository.findOne({ where: { id } });
     if (!existing) throw new BadRequestException('Product not found');
 
-    // Stock is stored in grams; convert from the supplied display unit. Strip
-    // fields that need special handling so they aren't blindly assigned.
+    // Stock is stored in the product's base unit; convert from the supplied
+    // display unit. Strip fields that need special handling so they aren't
+    // blindly assigned.
+    const prevMeasurementType = existing.measurementType;
     const { totalQuantity, totalQuantityUnit, cuttingStyleIds, variants, ...rest } =
       updateProductDto;
     Object.assign(existing, rest);
     if (totalQuantity != null) {
-      existing.totalQuantity = toGrams(
-        totalQuantity,
-        totalQuantityUnit ?? ProductUnits.G,
-      );
+      const stockUnit = (totalQuantityUnit ??
+        baseUnitFor(existing.measurementType)) as Unit;
+      this.validateUnitForType(existing.measurementType, stockUnit, totalQuantity);
+      existing.totalQuantity = toBase(totalQuantity, stockUnit);
     }
 
     const product = await this.productRepository.save(existing);
+
+    // If the measurement family changed, relabel existing variants so their unit
+    // stays valid for the new family (keeps the stored base amount, remaps the
+    // display tier: kg->l / g->ml / anything->count). Admin reviews amounts after.
+    if (product.measurementType !== prevMeasurementType) {
+      await this.relabelVariantsForType(product.id, product.measurementType);
+    }
 
     // Resolve the product's target cutting styles and keep variants in sync.
     let targetStyleIds: string[];

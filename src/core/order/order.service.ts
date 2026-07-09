@@ -220,7 +220,7 @@ export class OrderService {
       where: { id },
       relations: {
         user: true,
-        orderItems: { product: { category: true } },
+        orderItems: { product: { category: true }, variant: true },
         deliveryDetails: true,
       },
     });

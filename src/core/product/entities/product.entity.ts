@@ -8,6 +8,7 @@ import {
   ManyToMany,
   JoinColumn,
 } from 'typeorm';
+import { MeasurementType } from '../../../common/enums';
 
 @Entity('Products')
 export class Products {
@@ -25,6 +26,14 @@ export class Products {
 
   @Column({ type: 'varchar' })
   categoryId: string;
+
+  /**
+   * Measurement family this product is sold in (WEIGHT | VOLUME | COUNT).
+   * Locks the units for all its variants and stock counters. Existing rows
+   * default to WEIGHT.
+   */
+  @Column({ type: 'varchar', default: 'WEIGHT' })
+  measurementType: MeasurementType;
 
   @Column({ type: 'boolean', default: false })
   cleaning: boolean;

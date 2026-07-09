@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
-import { ProductUnits } from 'src/common/enums';
+import { MeasurementType, ProductUnits } from 'src/common/enums';
 import { CreateProductVariantDto } from './create-product-variant.dto';
 
 export class CreateProductDto {
@@ -25,6 +25,16 @@ export class CreateProductDto {
   @IsNotEmpty()
   @IsString()
   categoryId: string;
+
+  @ApiProperty({
+    description: 'Measurement family: WEIGHT (g/kg), VOLUME (ml/L) or COUNT',
+    enum: MeasurementType,
+    example: MeasurementType.WEIGHT,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(MeasurementType)
+  measurementType?: MeasurementType;
 
   @ApiProperty({ description: 'Cleaning available for this product', example: false, required: false })
   @IsOptional()

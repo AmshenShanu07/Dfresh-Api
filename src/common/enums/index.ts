@@ -10,6 +10,22 @@ export enum UserTypes {
 export enum ProductUnits {
   KG = 'KG',
   G = 'G',
+  L = 'L',
+  ML = 'ML',
+  COUNT = 'COUNT',
+}
+
+/**
+ * The measurement family a product is sold in. Chosen once per product; all its
+ * variants and stock counters are locked to this family.
+ *  - WEIGHT: base unit grams (g); display units g / kg
+ *  - VOLUME: base unit millilitres (ml); display units ml / L
+ *  - COUNT: base unit count; stored as-is, no conversion (e.g. eggs)
+ */
+export enum MeasurementType {
+  WEIGHT = 'WEIGHT',
+  VOLUME = 'VOLUME',
+  COUNT = 'COUNT',
 }
 
 export enum ShareCatalogStatus {
