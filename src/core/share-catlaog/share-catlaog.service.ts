@@ -417,19 +417,22 @@ export class ShareCatlaogService {
     }
 
     // Stock is applied additively — never reset (preserves sold + remaining).
+    let toppedUp = false;
     if (dto.productQuantities !== undefined) {
       const includedProductIds =
         dto.shareCatalogProducts !== undefined
           ? dto.shareCatalogProducts.map((p) => p.productId)
           : undefined;
-      await this.applyStockDeltas(
-        id,
-        this.toStockDeltas(dto.productQuantities),
-        includedProductIds,
-      );
+      const deltas = this.toStockDeltas(dto.productQuantities);
+      toppedUp = deltas.some((d) => d.addBase > 0);
+      await this.applyStockDeltas(id, deltas, includedProductIds);
     }
 
-    await this.resumeIfSellable(id);
+    // Only a genuine stock increase can bring a PAUSED (sold-out) catalog back;
+    // schedule/price-only edits must not silently un-pause it.
+    if (toppedUp) {
+      await this.resumeIfSellable(id);
+    }
 
     return this.shareCatalogRepository.findOne({
       where: { id },
