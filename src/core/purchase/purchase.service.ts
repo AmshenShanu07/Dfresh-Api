@@ -31,9 +31,9 @@ export class PurchaseService {
       this.userRepository.findOne({ where: { id: createPurchaseDto.supplierId } }),
     ]);
 
-    if (!product) return new BadRequestException('Product not found');
-    if (!outlet) return new BadRequestException('Outlet not found');
-    if (!supplier) return new BadRequestException('Supplier not found');
+    if (!product) throw new BadRequestException('Product not found');
+    if (!outlet) throw new BadRequestException('Outlet not found');
+    if (!supplier) throw new BadRequestException('Supplier not found');
 
     const purchase = await this.purchaseRepository.save(
       this.purchaseRepository.create({
@@ -60,7 +60,7 @@ export class PurchaseService {
   async addCleaningDetails(id: string, cleaningDetails: CleaningDetailsDto) {
     const purchase = await this.purchaseRepository.findOne({ where: { id } });
 
-    if (!purchase) return new BadRequestException('Purchase not found');
+    if (!purchase) throw new BadRequestException('Purchase not found');
 
     await this.purchaseRepository.update(id, {
       releasedQtny: cleaningDetails.releasedQnty,
@@ -76,7 +76,7 @@ export class PurchaseService {
   async addThreshold(id: string, threshold: ThresholdLevelDto) {
     const purchase = await this.purchaseRepository.findOne({ where: { id } });
 
-    if (!purchase) return new BadRequestException('Purchase not found');
+    if (!purchase) throw new BadRequestException('Purchase not found');
 
     await this.purchaseRepository.update(id, {
       thresholdQnty: threshold.thresholdQnty,

@@ -61,15 +61,23 @@ export class WhatsappService {
     try {
       await this.sendLog(JSON.stringify(data));
 
-      const type: string =
-        data.entry[0]?.changes[0]?.value?.messages[0]?.type || '';
+      const value = data.entry?.[0]?.changes?.[0]?.value;
+      const message = value?.messages?.[0];
+
+      // Delivery/read status callbacks (value.statuses) and any other
+      // non-message events carry no `messages` array — ignore them so we don't
+      // throw on the missing index.
+      if (!message) {
+        return;
+      }
+
+      const type: string = message.type || '';
 
       if (!type) {
         return 'This action only accepts text messages';
       }
 
-      const phone: string =
-        data.entry[0]?.changes[0]?.value?.messages[0]?.from;
+      const phone: string = message.from;
 
       if (!phone) {
         return;
@@ -114,9 +122,14 @@ export class WhatsappService {
       }
 
       if (type == 'text') {
-        console.log('Text received', data.entry[0].changes[0].value.messages[0].text);
-        await this.sendWelcomeMessage(existingUser.name, phone);
-        return this.promptWardIfNoAddress(existingUser.id, phone);
+        const body = message.text?.body?.trim() ?? '';
+        console.log('Text received', message.text);
+        // A greeting/first contact shows the welcome; any other free text shows
+        // the main menu instead of bouncing the user back to onboarding.
+        if (/^(hi|hello|hey|hai|start|menu)$/i.test(body)) {
+          return this.sendWelcomeMessage(existingUser.name, phone);
+        }
+        return this.sendMainMenu(existingUser.name, phone);
       }
 
       if (type == 'interactive') {
@@ -164,7 +177,11 @@ export class WhatsappService {
             buttons: [
               {
                 type: 'reply',
-                reply: { id: 'get-catlog', title: 'See Products' },
+                reply: { id: 'get-catlog', title: 'View Products' },
+              },
+              {
+                type: 'reply',
+                reply: { id: 'cartView', title: 'View Cart' },
               },
             ],
           },
@@ -175,6 +192,42 @@ export class WhatsappService {
       console.log('Message sent:', response.data);
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
+    }
+  }
+
+  /** Main menu shown when a known customer sends arbitrary (non-greeting) text. */
+  async sendMainMenu(name: string, phone: string) {
+    try {
+      const payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: phone,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          body: {
+            text: `Hi ${name}! What would you like to do?`,
+          },
+          footer: { text: 'Fresh to home™' },
+          action: {
+            buttons: [
+              {
+                type: 'reply',
+                reply: { id: 'get-catlog', title: 'View Products' },
+              },
+              {
+                type: 'reply',
+                reply: { id: 'cartView', title: 'View Cart' },
+              },
+            ],
+          },
+        },
+      };
+
+      const response = await this.waInstance.post('/messages', payload);
+      console.log('Menu sent:', response.data);
+    } catch (error: any) {
+      console.error('Error sending menu:', error.response?.data || error.message);
     }
   }
 
@@ -257,6 +310,8 @@ export class WhatsappService {
         return this.addItemToCart(phone, parts[0], parts[1], parts[2], parts[3]);
       case 'cancelItem':
         return this.handleCancelItem(phone);
+      case 'cartView':
+        return this.sendCartSummary(phone);
       case 'cartAddMore':
         return this.sendProductList(phone);
       case 'cartRemove':
@@ -1288,7 +1343,11 @@ export class WhatsappService {
           addOns.push(`${label} +₹${item.cuttingCharge ?? 0}`);
         }
         const addOnText = addOns.length ? ` (${addOns.join(', ')})` : '';
-        return `• ${item.product?.name ?? 'Product'} - ${item.quantity} Kg${addOnText} - ₹${item.totalPrice}`;
+        const unitLabel = item.variant ? this.formatWeight(item.variant) : '';
+        const qtyText = unitLabel
+          ? `${item.quantity} × ${unitLabel}`
+          : `${item.quantity}`;
+        return `• ${item.product?.name ?? 'Product'} - ${qtyText}${addOnText} - ₹${item.totalPrice}`;
       })
       .join('\n');
 

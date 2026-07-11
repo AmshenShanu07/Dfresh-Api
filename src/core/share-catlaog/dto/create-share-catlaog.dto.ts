@@ -9,6 +9,7 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   Matches,
   ValidateNested,
@@ -56,8 +57,8 @@ class ShareCatalogProductsDto {
   variantId: string;
 
   @ApiProperty({ example: 100 })
-  @IsNotEmpty()
   @IsNumber()
+  @IsPositive({ message: 'price must be greater than 0' })
   price: number;
 }
 

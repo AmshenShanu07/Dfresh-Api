@@ -4,6 +4,7 @@ import {
   IsArray,
   IsNotEmpty,
   IsNumber,
+  IsPositive,
   IsString,
   ValidateNested,
 } from 'class-validator';
@@ -16,7 +17,7 @@ export class CreateCatlogVariantDto {
 
   @ApiProperty({ example: 250 })
   @IsNumber()
-  @IsNotEmpty()
+  @IsPositive({ message: 'price must be greater than 0' })
   price: number;
 }
 

@@ -38,6 +38,12 @@ export class OrderDetails {
   @Column({ type: 'boolean', default: false })
   stockDeducted: boolean;
 
+  // The share-catalog the reserved/deducted stock was taken from, so a later
+  // cancel or expiry can credit the correct catalog even if a different one is
+  // LIVE by then. Null when no catalog was LIVE at reservation time.
+  @Column({ type: 'varchar', nullable: true })
+  stockCatalogId: string | null;
+
   @Column({ type: 'varchar', nullable: true })
   paymentScreenshotUrl: string | null;
 

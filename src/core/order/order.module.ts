@@ -10,6 +10,7 @@ import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
 import { ShareCatalogProductStock } from '../share-catlaog/entities/share-catalog-product-stock.entity';
 import { JwtService } from '@nestjs/jwt';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { OrderExpiryCronService } from './order-expiry.cron';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { WhatsappModule } from '../whatsapp/whatsapp.module';
     WhatsappModule,
   ],
   controllers: [OrderController],
-  providers: [OrderService, JwtService],
+  providers: [OrderService, JwtService, OrderExpiryCronService],
   exports: [OrderService],
 })
 export class OrderModule {}

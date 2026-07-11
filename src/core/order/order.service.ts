@@ -58,6 +58,14 @@ export class OrderService {
       relations: { ShareCatalogProductStock: true },
     });
 
+    // Remember which catalog the stock was taken from so a later cancel /
+    // expiry can credit the correct catalog even if a different one is LIVE then.
+    if (live) {
+      await this.orderDetailsRepository.update(orderId, {
+        stockCatalogId: live.id,
+      });
+    }
+
     for (const item of order.orderItems ?? []) {
       const weight = item.variant?.weight ?? 0;
       const grams = weight * (item.quantity ?? 0);
@@ -124,6 +132,87 @@ export class OrderService {
     }
   }
 
+  /**
+   * Reverses a prior stock deduction/reservation: credits the reserved
+   * quantities back to the product master stock and, when known, to the
+   * originating share-catalog allocation. Idempotent via the stockDeducted
+   * flag (cleared after crediting). Does NOT resume a PAUSED catalog.
+   */
+  private async restoreStock(orderId: string) {
+    const order = await this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+      relations: { orderItems: { variant: true } },
+    });
+    if (!order || !order.stockDeducted) return;
+
+    // Clear first to guard against concurrent/duplicate restores.
+    await this.orderDetailsRepository.update(orderId, { stockDeducted: false });
+
+    const catalog = order.stockCatalogId
+      ? await this.shareCatalogRepository.findOne({
+          where: { id: order.stockCatalogId },
+          relations: { ShareCatalogProductStock: true },
+        })
+      : null;
+
+    for (const item of order.orderItems ?? []) {
+      const weight = item.variant?.weight ?? 0;
+      const grams = weight * (item.quantity ?? 0);
+      if (grams <= 0) continue;
+
+      await this.productRepository.increment(
+        { id: item.productId },
+        'totalQuantity',
+        grams,
+      );
+
+      if (catalog) {
+        const stock = (catalog.ShareCatalogProductStock ?? []).find(
+          (s: any) => s.productId === item.productId,
+        );
+        if (stock) {
+          stock.remainingGrams = Math.min(
+            stock.offeredGrams,
+            stock.remainingGrams + grams,
+          );
+          await this.shareCatalogProductStockRepository.save(stock);
+        }
+      }
+    }
+  }
+
+  /**
+   * Cancels and releases stock for stale unconfirmed orders. Runs on a cron.
+   * Skips UPI orders awaiting payment/verification (they keep status PENDING
+   * but must be settled by an admin, not auto-cancelled).
+   */
+  async expireStaleOrders(maxAgeMinutes = 30) {
+    const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+
+    const stale = await this.orderDetailsRepository
+      .createQueryBuilder('order')
+      .where('order.status IN (:...statuses)', {
+        statuses: [OrderStatus.DRAFT, OrderStatus.PENDING],
+      })
+      .andWhere('order.createdAt < :cutoff', { cutoff })
+      .andWhere('order.paymentStatus NOT IN (:...pending)', {
+        pending: [
+          PaymentStatus.AWAITING_SCREENSHOT,
+          PaymentStatus.AWAITING_VERIFICATION,
+        ],
+      })
+      .getMany();
+
+    for (const order of stale) {
+      await this.restoreStock(order.id);
+      await this.orderDetailsRepository.update(order.id, {
+        status: OrderStatus.CANCELLED,
+      });
+    }
+
+    return { cancelled: stale.length };
+  }
+
   async createOrder(phone: string, products: any[]) {
     try {
       const user = await this.userRepository.findOne({
@@ -188,6 +277,10 @@ export class OrderService {
         }),
       );
 
+      // Reserve stock at checkout so the DRAFT→CONFIRMED window can't oversell.
+      // Idempotent via stockDeducted, so later confirm-time calls are no-ops.
+      await this.applyStockDeduction(order.id);
+
       return order;
     } catch (error) {
       console.log('error', error);
@@ -233,6 +326,8 @@ export class OrderService {
   }
 
   async cancelOrder(id: string) {
+    // Credit any reserved/deducted stock back before cancelling.
+    await this.restoreStock(id);
     await this.orderDetailsRepository.update(id, { status: OrderStatus.CANCELLED });
     return { success: true };
   }
@@ -410,7 +505,11 @@ export class OrderService {
 
     return this.orderDetailsRepository.findOne({
       where: { id: orderId },
-      relations: { orderItems: { product: true }, deliveryDetails: true, user: true },
+      relations: {
+        orderItems: { product: true, variant: true },
+        deliveryDetails: true,
+        user: true,
+      },
     });
   }
 }
