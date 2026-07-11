@@ -71,11 +71,13 @@ export class OrderService {
       const grams = weight * (item.quantity ?? 0);
       if (grams <= 0) continue;
 
-      await this.productRepository.decrement(
-        { id: item.productId },
-        'totalQuantity',
-        grams,
-      );
+      await this.productRepository
+        .createQueryBuilder()
+        .update(Products)
+        .set({ totalQuantity: () => 'GREATEST(0, "totalQuantity" - :grams)' })
+        .where('id = :id', { id: item.productId })
+        .setParameters({ grams })
+        .execute();
 
       if (live) {
         const stock = (live.ShareCatalogProductStock ?? []).find(
