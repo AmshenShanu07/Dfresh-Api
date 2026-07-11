@@ -15,7 +15,11 @@ import { Products } from '../product/entities/product.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { ShareCatalogStatus } from 'src/common/enums';
 import { toBase } from 'src/common/utils/units';
-import { ScheduleWindow, windowsOverlap } from './share-catlaog.window';
+import {
+  ScheduleWindow,
+  windowsOverlap,
+  computeCurrentWindowStart,
+} from './share-catlaog.window';
 import { reconcileStock } from './stock-reconcile';
 
 /** Statuses the cron/customer flow treats as "enabled". */
@@ -267,6 +271,52 @@ export class ShareCatlaogService {
     }
   }
 
+  /**
+   * Resumes a PAUSED catalog once a top-up makes it sellable again. In-window it
+   * goes LIVE (variants reactivated, no re-broadcast to avoid spamming customers
+   * mid-window); out-of-window it goes ACTIVE for the cron to promote at the next
+   * window open. No-op for any non-PAUSED catalog or one still with no sellable
+   * product.
+   */
+  private async resumeIfSellable(id: string) {
+    const catalog = await this.shareCatalogRepository.findOne({
+      where: { id },
+      relations: {
+        ShareCatalogProducts: { variant: true },
+        ShareCatalogProductStock: true,
+      },
+    });
+    if (!catalog || catalog.status !== ShareCatalogStatus.PAUSED) return;
+    if (!this.hasAnySellable(catalog)) return;
+
+    const windowStart = computeCurrentWindowStart(
+      new Date(),
+      catalog.daysOfWeek,
+      catalog.startTime,
+      catalog.endTime,
+    );
+
+    if (windowStart !== null) {
+      const variantIds = (catalog.ShareCatalogProducts ?? [])
+        .filter((scp: any) => scp.variantId)
+        .map((scp: any) => scp.variantId);
+      if (variantIds.length) {
+        await this.variantRepository
+          .createQueryBuilder()
+          .update(ProductVariant)
+          .set({ isActive: true })
+          .whereInIds(variantIds)
+          .execute();
+      }
+      catalog.status = ShareCatalogStatus.LIVE;
+      catalog.lastWindowOpenedAt = windowStart;
+    } else {
+      catalog.status = ShareCatalogStatus.ACTIVE;
+      catalog.lastWindowOpenedAt = new Date();
+    }
+    await this.shareCatalogRepository.save(catalog);
+  }
+
   /** True if any product has a variant that fits its remaining allocation. */
   hasAnySellable(catalog: ShareCatalog): boolean {
     const stockByProduct = new Map<string, number>();
@@ -324,8 +374,8 @@ export class ShareCatlaogService {
 
   /**
    * Edits a share catalog: schedule, the set of products (variant price rows)
-   * and per-product offered quantities. Does NOT auto-resume a PAUSED catalog —
-   * use setActive(true) after topping up.
+   * and per-product offered quantities. If a top-up makes a PAUSED catalog
+   * sellable again, it is auto-resumed (see resumeIfSellable).
    */
   async update(id: string, dto: UpdateShareCatlaogDto) {
     const catalog = await this.shareCatalogRepository.findOne({
@@ -378,6 +428,8 @@ export class ShareCatlaogService {
         includedProductIds,
       );
     }
+
+    await this.resumeIfSellable(id);
 
     return this.shareCatalogRepository.findOne({
       where: { id },
