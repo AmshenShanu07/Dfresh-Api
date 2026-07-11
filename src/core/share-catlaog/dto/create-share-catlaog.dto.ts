@@ -68,10 +68,10 @@ class ProductQuantityDto {
   @IsString()
   productId: string;
 
-  @ApiProperty({ example: 10, description: 'Offered quantity for this product in the window.' })
+  @ApiProperty({ example: 10, description: 'Amount to ADD to this product\'s offered stock (initial amount on create).' })
   @IsNotEmpty()
   @IsNumber()
-  qnty: number;
+  addQnty: number;
 
   @ApiProperty({ example: ProductUnits.KG })
   @IsNotEmpty()

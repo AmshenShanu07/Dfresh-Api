@@ -16,6 +16,7 @@ import { ProductVariant } from '../product/entities/product-variant.entity';
 import { ShareCatalogStatus } from 'src/common/enums';
 import { toBase } from 'src/common/utils/units';
 import { ScheduleWindow, windowsOverlap } from './share-catlaog.window';
+import { reconcileStock } from './stock-reconcile';
 
 /** Statuses the cron/customer flow treats as "enabled". */
 export const ENABLED_STATUSES = [
@@ -73,10 +74,14 @@ export class ShareCatlaogService {
       }),
     );
 
-    await this.saveProductsAndStock(
+    await this.saveVariantPriceRows(
       shareCatalog.id,
       createShareCatlaogDto.shareCatalogProducts,
-      createShareCatlaogDto.productQuantities,
+    );
+    await this.applyStockDeltas(
+      shareCatalog.id,
+      this.toStockDeltas(createShareCatlaogDto.productQuantities),
+      createShareCatlaogDto.shareCatalogProducts.map((p) => p.productId),
     );
 
     return this.shareCatalogRepository.findOne({
@@ -85,11 +90,10 @@ export class ShareCatlaogService {
     });
   }
 
-  /** Persists per-variant price rows and per-product stock allocations. */
-  private async saveProductsAndStock(
+  /** Rebuilds the per-variant price rows for a share catalog. */
+  private async saveVariantPriceRows(
     shareCatalogId: string,
     products: { productId: string; variantId: string; price: number }[],
-    quantities: { productId: string; qnty: number; qntyUnit: any }[],
   ) {
     await this.shareCatalogProductsRepository.save(
       products.map((product) =>
@@ -101,18 +105,68 @@ export class ShareCatlaogService {
         }),
       ),
     );
+  }
 
-    await this.shareCatalogProductStockRepository.save(
-      (quantities ?? []).map((q) => {
-        const baseAmount = toBase(q.qnty, q.qntyUnit);
-        return this.shareCatalogProductStockRepository.create({
-          shareCatalogId,
-          productId: q.productId,
-          offeredGrams: baseAmount,
-          remainingGrams: baseAmount,
-        });
-      }),
+  /**
+   * Additively applies per-product stock deltas (see reconcileStock). Existing
+   * rows gain the delta (sold preserved), new products are inserted, and — when
+   * `includedProductIds` is provided — products dropped from the share have their
+   * stock row removed. Passing `includedProductIds === undefined` deletes nothing.
+   */
+  private async applyStockDeltas(
+    shareCatalogId: string,
+    deltas: { productId: string; addBase: number }[],
+    includedProductIds?: string[],
+  ) {
+    const existingRows = await this.shareCatalogProductStockRepository.find({
+      where: { shareCatalogId },
+    });
+
+    const result = reconcileStock(
+      existingRows.map((r) => ({
+        productId: r.productId,
+        offeredGrams: r.offeredGrams,
+        remainingGrams: r.remainingGrams,
+      })),
+      deltas,
+      includedProductIds,
     );
+
+    const byProduct = new Map(existingRows.map((r) => [r.productId, r]));
+    for (const u of result.upserts) {
+      const row = byProduct.get(u.productId);
+      if (row) {
+        row.offeredGrams = u.offeredGrams;
+        row.remainingGrams = u.remainingGrams;
+        await this.shareCatalogProductStockRepository.save(row);
+      } else {
+        await this.shareCatalogProductStockRepository.save(
+          this.shareCatalogProductStockRepository.create({
+            shareCatalogId,
+            productId: u.productId,
+            offeredGrams: u.offeredGrams,
+            remainingGrams: u.remainingGrams,
+          }),
+        );
+      }
+    }
+
+    if (result.deletes.length) {
+      await this.shareCatalogProductStockRepository.delete({
+        shareCatalogId,
+        productId: In(result.deletes),
+      });
+    }
+  }
+
+  /** Maps DTO productQuantities to base-unit deltas. */
+  private toStockDeltas(
+    quantities: { productId: string; addQnty: number; qntyUnit: any }[] = [],
+  ): { productId: string; addBase: number }[] {
+    return quantities.map((q) => ({
+      productId: q.productId,
+      addBase: toBase(q.addQnty, q.qntyUnit),
+    }));
   }
 
   async setActive(id: string, active: boolean) {
@@ -306,28 +360,22 @@ export class ShareCatlaogService {
 
     await this.shareCatalogRepository.save(catalog);
 
-    // Rebuild product/price + stock rows when the caller supplies them.
+    // Variant/price rows are still rebuilt when supplied.
     if (dto.shareCatalogProducts !== undefined) {
       await this.shareCatalogProductsRepository.delete({ shareCatalogId: id });
-      await this.shareCatalogProductStockRepository.delete({ shareCatalogId: id });
-      await this.saveProductsAndStock(
+      await this.saveVariantPriceRows(id, dto.shareCatalogProducts);
+    }
+
+    // Stock is applied additively — never reset (preserves sold + remaining).
+    if (dto.productQuantities !== undefined) {
+      const includedProductIds =
+        dto.shareCatalogProducts !== undefined
+          ? dto.shareCatalogProducts.map((p) => p.productId)
+          : undefined;
+      await this.applyStockDeltas(
         id,
-        dto.shareCatalogProducts,
-        dto.productQuantities ?? [],
-      );
-    } else if (dto.productQuantities !== undefined) {
-      // Quantity-only edit (top-up): replace stock allocations.
-      await this.shareCatalogProductStockRepository.delete({ shareCatalogId: id });
-      await this.shareCatalogProductStockRepository.save(
-        dto.productQuantities.map((q) => {
-          const baseAmount = toBase(q.qnty, q.qntyUnit);
-          return this.shareCatalogProductStockRepository.create({
-            shareCatalogId: id,
-            productId: q.productId,
-            offeredGrams: baseAmount,
-            remainingGrams: baseAmount,
-          });
-        }),
+        this.toStockDeltas(dto.productQuantities),
+        includedProductIds,
       );
     }
 
