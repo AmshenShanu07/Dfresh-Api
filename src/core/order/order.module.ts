@@ -8,6 +8,8 @@ import { ProductVariant } from '../product/entities/product-variant.entity';
 import { Products } from '../product/entities/product.entity';
 import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
 import { ShareCatalogProductStock } from '../share-catlaog/entities/share-catalog-product-stock.entity';
+import { Staff } from '../users/entities/staff.entity';
+import { Outlets } from '../outlet/entities/outlet.entity';
 import { JwtService } from '@nestjs/jwt';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { OrderExpiryCronService } from './order-expiry.cron';
@@ -23,6 +25,8 @@ import { OrderExpiryCronService } from './order-expiry.cron';
       Products,
       ShareCatalog,
       ShareCatalogProductStock,
+      Staff,
+      Outlets,
     ]),
     WhatsappModule,
   ],

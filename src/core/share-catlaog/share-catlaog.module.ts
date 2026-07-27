@@ -18,6 +18,8 @@ import { UploadService } from '../upload/upload.service';
 import { Cart, CartItem } from '../cart/entities/cart.entity';
 import { CartService } from '../cart/cart.service';
 import { WardModule } from '../ward/ward.module';
+import { Staff } from '../users/entities/staff.entity';
+import { Outlets } from '../outlet/entities/outlet.entity';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { WardModule } from '../ward/ward.module';
       Category,
       Cart,
       CartItem,
+      Staff,
+      Outlets,
     ]),
   ],
   controllers: [ShareCatlaogController],

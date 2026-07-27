@@ -36,6 +36,11 @@ export class OrderController {
     return this.orderService.findOne(id);
   }
 
+  @Get(':id/delivery-agents')
+  getDeliveryAgents(@Param('id') id: string) {
+    return this.orderService.getDeliveryAgentsForOrder(id);
+  }
+
   @Patch('confirm/:id')
   confirmOrder(@Param('id') id: string) {
     return this.orderService.confirmOrder(id);

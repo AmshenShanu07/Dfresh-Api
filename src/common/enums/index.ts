@@ -5,6 +5,7 @@ export enum UserTypes {
   CENTRAL_STAFF = 'CENTRAL_STAFF',
   PURCHASE_STAFF = 'PURCHASE_STAFF',
   SUPPLIER = 'SUPPLIER',
+  DELIVERY_AGENT = 'DELIVERY_AGENT',
 }
 
 export enum ProductUnits {

@@ -4,6 +4,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.entity';
 import { User } from '../users/entities/user.entity';
+import { Staff } from '../users/entities/staff.entity';
+import { Outlets } from '../outlet/entities/outlet.entity';
+import { BadRequestException } from '@nestjs/common';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { Products } from '../product/entities/product.entity';
 import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
@@ -35,6 +38,10 @@ export class OrderService {
     private readonly shareCatalogRepository: Repository<ShareCatalog>,
     @InjectRepository(ShareCatalogProductStock)
     private readonly shareCatalogProductStockRepository: Repository<ShareCatalogProductStock>,
+    @InjectRepository(Outlets)
+    private readonly outletRepository: Repository<Outlets>,
+    @InjectRepository(Staff)
+    private readonly staffRepository: Repository<Staff>,
   ) {}
 
   /**
@@ -315,10 +322,50 @@ export class OrderService {
       where: { id },
       relations: {
         user: true,
+        deliveryAgent: true,
         orderItems: { product: { category: true }, variant: true },
         deliveryDetails: true,
       },
     });
+  }
+
+  /**
+   * Resolves the delivery agents available for an order. The order's outlet is
+   * derived from the customer's selected ward: the first outlet serving that
+   * ward (Outlets.wardId). Agents are the outlet's Staff whose user is a
+   * DELIVERY_AGENT. Returns the resolved outletId (null when none) and the
+   * agent list ([] when the ward maps to no outlet or the outlet has none).
+   */
+  async getDeliveryAgentsForOrder(orderId: string) {
+    const order = await this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+    });
+    if (!order || !order.wardId) {
+      return { outletId: null, agents: [] };
+    }
+
+    const outlet = await this.outletRepository.findOne({
+      where: { wardId: order.wardId, isDeleted: false },
+      order: { createdAt: 'ASC' },
+    });
+    if (!outlet) {
+      return { outletId: null, agents: [] };
+    }
+
+    const staff = await this.staffRepository.find({
+      where: { outletId: outlet.id, isDeleted: false },
+      relations: { user: true },
+    });
+
+    const agents = staff
+      .filter((s) => s.user?.userType === UserTypes.DELIVERY_AGENT)
+      .map((s) => ({
+        id: s.user.id,
+        name: s.user.name,
+        phone: s.user.phone,
+      }));
+
+    return { outletId: outlet.id, agents };
   }
 
   async confirmOrder(id: string) {
@@ -344,6 +391,7 @@ export class OrderService {
     id: string,
     dto: {
       status?: OrderStatus;
+      deliveryAgentId?: string;
       items?: {
         id: string;
         cleanedWeight: number | null;
@@ -371,6 +419,27 @@ export class OrderService {
     const statusChanged =
       dto.status != null && dto.status !== existing.status;
 
+    // A delivery agent from the order's outlet must be assigned before the
+    // order can move to DISPATCHED. Validate against the derived agent list so
+    // the assignment can't be spoofed to an agent of another outlet.
+    if (statusChanged && dto.status === OrderStatus.DISPATCHED) {
+      const { agents } = await this.getDeliveryAgentsForOrder(id);
+      if (agents.length === 0) {
+        throw new BadRequestException(
+          'No delivery agent is available for this order\'s area. Assign an agent to the serving outlet before dispatching.',
+        );
+      }
+      const chosen = agents.find((a) => a.id === dto.deliveryAgentId);
+      if (!chosen) {
+        throw new BadRequestException(
+          'Select a valid delivery agent from the order\'s outlet before dispatching.',
+        );
+      }
+      await this.orderDetailsRepository.update(id, {
+        deliveryAgentId: chosen.id,
+      });
+    }
+
     if (statusChanged) {
       await this.orderDetailsRepository.update(id, { status: dto.status });
       if (dto.status === OrderStatus.CONFIRMED) {
@@ -396,6 +465,9 @@ export class OrderService {
 
       await this.orderDetailsRepository.update(addressData.flow_token, {
         status: OrderStatus.PENDING,
+        // Capture the selected ward so the serving outlet can be derived when
+        // assigning a delivery agent at dispatch. Only overwrite when provided.
+        ...(addressData.wardId ? { wardId: addressData.wardId } : {}),
       });
 
       const order = await this.orderDetailsRepository.findOne({
@@ -412,7 +484,13 @@ export class OrderService {
 
   async confirmOrderWithAddress(
     orderId: string,
-    address: { name: string; address: string; pinCode: string; phone: string },
+    address: {
+      name: string;
+      address: string;
+      pinCode: string;
+      phone: string;
+      wardId?: string | null;
+    },
   ) {
     try {
       await this.deliveryDetailsRepository.save(
@@ -427,6 +505,9 @@ export class OrderService {
 
       await this.orderDetailsRepository.update(orderId, {
         status: OrderStatus.PENDING,
+        // Capture the selected ward so the serving outlet can be derived when
+        // assigning a delivery agent at dispatch. Only overwrite when provided.
+        ...(address.wardId ? { wardId: address.wardId } : {}),
       });
 
       const order = await this.orderDetailsRepository.findOne({

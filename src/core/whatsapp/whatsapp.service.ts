@@ -1284,6 +1284,7 @@ export class WhatsappService {
         address: address.address,
         pinCode: address.pinCode,
         phone: address.phone,
+        wardId: address.wardId,
       });
 
       if (order) {
@@ -1319,6 +1320,9 @@ export class WhatsappService {
       // Onboarding (no order) just saves the address and stops here.
       if (orderId) {
         addressData.flow_token = orderId;
+        // Preserve the ward parsed from the flow token so the order can record
+        // it (the token is about to be overwritten with the bare order id).
+        addressData.wardId = wardId ?? null;
         const order = await this.orderService.updateOrderAddress(addressData);
         if (order) {
           await this.sendPaymentMethodButtons(phone, order.id, order.totalAmount);
@@ -1384,10 +1388,21 @@ export class WhatsappService {
     const shortId = String(order.id ?? '').slice(0, 8).toUpperCase();
 
     let headline: string;
+    // For a dispatched order, include the assigned delivery agent's contact so
+    // the customer knows who is bringing their order.
+    let agentLine = '';
     if (order.status === 'CONFIRMED') {
       headline = '✅ *Your order has been confirmed!*';
     } else if (order.status === 'DISPATCHED') {
       headline = '🚚 *Your order is out for delivery!*';
+      if (order.deliveryAgent?.name) {
+        agentLine =
+          `\n*Delivery partner:* ${order.deliveryAgent.name}` +
+          (order.deliveryAgent.phone
+            ? `\n*Contact:* ${order.deliveryAgent.phone}`
+            : '') +
+          `\n`;
+      }
     } else {
       // Not a customer-facing milestone; nothing to send.
       return;
@@ -1396,8 +1411,9 @@ export class WhatsappService {
     const body =
       `${headline}\n\n` +
       `Order *#${shortId}*\n` +
-      `*Total Amount: ₹${order.totalAmount}*\n\n` +
-      `_Further order updates will be notified to you on WhatsApp._`;
+      `*Total Amount: ₹${order.totalAmount}*\n` +
+      agentLine +
+      `\n_Further order updates will be notified to you on WhatsApp._`;
 
     const payload = {
       messaging_product: 'whatsapp',

@@ -50,6 +50,18 @@ export class OrderDetails {
   @Column({ type: 'timestamp', nullable: true })
   paymentScreenshotAt: Date | null;
 
+  // The ward the customer selected for this order's delivery address, captured
+  // at checkout. Used to derive the serving outlet (Outlets.wardId) so a
+  // delivery agent can be assigned before dispatch. Null for orders placed
+  // before this was captured.
+  @Column({ type: 'varchar', nullable: true })
+  wardId: string | null;
+
+  // The delivery agent (a User with userType DELIVERY_AGENT) assigned to
+  // deliver this order. Required before the order can move to DISPATCHED.
+  @Column({ type: 'varchar', nullable: true })
+  deliveryAgentId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
@@ -59,6 +71,10 @@ export class OrderDetails {
   @ManyToOne('User', 'OrderDetails')
   @JoinColumn({ name: 'userId' })
   user: any;
+
+  @ManyToOne('User')
+  @JoinColumn({ name: 'deliveryAgentId' })
+  deliveryAgent: any;
 
   @OneToMany('OrderItems', 'order')
   orderItems: any[];
