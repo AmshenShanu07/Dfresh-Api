@@ -451,17 +451,32 @@ export class OrderService {
     return { order, statusChanged };
   }
 
+  /**
+   * Writes the single delivery address for an order. `DeliveryDetails.orderId`
+   * is unique (one-to-one with the order), so this must be idempotent: if the
+   * customer re-submits an address for the same order (e.g. taps "Add New
+   * Address"/"Confirm Address" more than once), overwrite the existing row
+   * instead of inserting a duplicate — a blind insert violates the unique
+   * constraint and silently stalls the WhatsApp checkout flow.
+   */
+  private async writeDeliveryDetails(
+    orderId: string,
+    data: { address: string; pinCode: string; phone: string; name: string },
+  ) {
+    await this.deliveryDetailsRepository.upsert(
+      { orderId, ...data },
+      ['orderId'],
+    );
+  }
+
   async updateOrderAddress(addressData: any) {
     try {
-      await this.deliveryDetailsRepository.save(
-        this.deliveryDetailsRepository.create({
-          orderId: addressData.flow_token,
-          address: addressData.address,
-          pinCode: addressData.pincode,
-          phone: addressData.phone,
-          name: addressData.name,
-        }),
-      );
+      await this.writeDeliveryDetails(addressData.flow_token, {
+        address: addressData.address,
+        pinCode: addressData.pincode,
+        phone: addressData.phone,
+        name: addressData.name,
+      });
 
       await this.orderDetailsRepository.update(addressData.flow_token, {
         status: OrderStatus.PENDING,
@@ -493,15 +508,12 @@ export class OrderService {
     },
   ) {
     try {
-      await this.deliveryDetailsRepository.save(
-        this.deliveryDetailsRepository.create({
-          orderId,
-          address: address.address,
-          pinCode: address.pinCode,
-          phone: address.phone,
-          name: address.name,
-        }),
-      );
+      await this.writeDeliveryDetails(orderId, {
+        address: address.address,
+        pinCode: address.pinCode,
+        phone: address.phone,
+        name: address.name,
+      });
 
       await this.orderDetailsRepository.update(orderId, {
         status: OrderStatus.PENDING,

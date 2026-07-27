@@ -264,7 +264,7 @@ export class WhatsappService {
     try {
       const catalog = await this.getOpenCatalog();
       if (!catalog) {
-        return this.sendOffHoursMessage(phone);
+        return this.sendUnavailableMessage(phone);
       }
 
       await this.sendText(
@@ -367,6 +367,43 @@ export class WhatsappService {
     );
   }
 
+  /**
+   * A sold-out (PAUSED) catalog whose scheduled window is open right now, or
+   * null. A catalog is auto-PAUSED when every product runs out of stock, so
+   * this lets us tell an in-window customer "out of stock" rather than the
+   * misleading off-hours message.
+   */
+  private async getSoldOutInWindowCatalog(): Promise<any | null> {
+    const paused = await this.shareCatalogRepository.find({
+      where: { status: ShareCatalogStatus.PAUSED, isDeleted: false },
+    });
+
+    const now = new Date();
+    return (
+      paused.find((c) =>
+        computeCurrentWindowStart(now, c.daysOfWeek, c.startTime, c.endTime),
+      ) ?? null
+    );
+  }
+
+  /**
+   * Chooses the right "can't serve products" reply. If a catalog's window is
+   * open but it sold out (PAUSED), tell the customer it's out of stock;
+   * otherwise fall back to the off-hours / next-window message.
+   */
+  private async sendUnavailableMessage(phone: string) {
+    const soldOut = await this.getSoldOutInWindowCatalog();
+    if (soldOut) return this.sendOutOfStockMessage(phone);
+    return this.sendOffHoursMessage(phone);
+  }
+
+  private async sendOutOfStockMessage(phone: string) {
+    return this.sendText(
+      phone,
+      'All products are currently out of stock. Please try again after some time.',
+    );
+  }
+
   /** Remaining offered grams for a product within the open catalog. */
   private remainingGramsFor(catalog: any, productId: string): number {
     const stock = (catalog?.ShareCatalogProductStock ?? []).find(
@@ -398,7 +435,7 @@ export class WhatsappService {
 
   async sendProductList(phone: string, page = 0) {
     const catalog = await this.getOpenCatalog();
-    if (!catalog) return this.sendOffHoursMessage(phone);
+    if (!catalog) return this.sendUnavailableMessage(phone);
 
     const entries = (catalog.ShareCatalogProducts ?? []).filter(
       (e: any) =>
@@ -455,7 +492,7 @@ export class WhatsappService {
     const products = order.map((id) => byProduct.get(id)!);
 
     if (products.length === 0) {
-      return this.sendText(phone, 'No products available right now.');
+      return this.sendOutOfStockMessage(phone);
     }
 
     const LIST_MAX = 10;
@@ -508,7 +545,7 @@ export class WhatsappService {
 
   async sendWeightList(phone: string, productId: string) {
     const catalog = await this.getOpenCatalog();
-    if (!catalog) return this.sendOffHoursMessage(phone);
+    if (!catalog) return this.sendUnavailableMessage(phone);
 
     const entries = (catalog.ShareCatalogProducts ?? []).filter(
       (e: any) =>
