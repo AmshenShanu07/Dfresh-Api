@@ -100,15 +100,18 @@ export class InvoiceService {
           doc.font('Helvetica').fontSize(8).fillColor('#555').text(weightLine, cols.item, doc.y, { width: nameCellW });
           doc.fillColor('black');
         }
-        const rowEndY = doc.y;
+        const nameEndY = doc.y;
 
         doc.font('Helvetica').fontSize(9);
         doc.text(this.formatQty(item), cols.qty, startY, { width: cols.unit - cols.qty - 4 });
         doc.text(this.money(item.price), cols.unit, startY, { width: cols.addon - cols.unit - 4 });
-        doc.fontSize(8).text(addons, cols.addon, startY, { width: cols.amount - cols.addon - 4 });
         doc.fontSize(9).text(this.money(item.totalPrice), cols.amount, startY, { width: amountWidth, align: 'right' });
+        // Add-ons can wrap to several lines — render last and measure its bottom
+        // so the row height covers the tallest cell and rows never overlap.
+        doc.fontSize(8).text(addons, cols.addon, startY, { width: cols.amount - cols.addon - 4 });
+        const addonEndY = doc.y;
 
-        y = Math.max(rowEndY, startY + 14) + 6;
+        y = Math.max(nameEndY, addonEndY, startY + 14) + 6;
 
         if (y > doc.page.height - 120) {
           doc.addPage();
