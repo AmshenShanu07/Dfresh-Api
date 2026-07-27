@@ -35,7 +35,7 @@ export class UsersService {
     });
 
     if (isExist !== null) {
-      return new BadRequestException('User already exist');
+      throw new BadRequestException('User already exist');
     }
 
     const password = await bcrypt.hash(createUserDto.password, 10);
