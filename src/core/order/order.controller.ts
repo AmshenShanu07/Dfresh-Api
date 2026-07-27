@@ -7,12 +7,18 @@ import {
   Query,
   Body,
   UseGuards,
+  Res,
+  StreamableFile,
+  NotFoundException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { OrderService } from './order.service';
+import { InvoiceService } from './invoice.service';
 import { UserAuthGuard } from 'src/guards/user.guard';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { UpdateOrderDetailsDto } from './dto/update-order-details.dto';
 import { OrderStatus } from 'src/common/enums';
+import { deriveOrderNumber } from './order-number.util';
 
 @Controller('order')
 @UseGuards(UserAuthGuard)
@@ -20,6 +26,7 @@ export class OrderController {
   constructor(
     private readonly orderService: OrderService,
     private readonly whatsappService: WhatsappService,
+    private readonly invoiceService: InvoiceService,
   ) {}
 
   @Get('list')
@@ -41,9 +48,47 @@ export class OrderController {
     return this.orderService.getDeliveryAgentsForOrder(id);
   }
 
+  @Get(':id/bill')
+  async printBill(
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const order = await this.orderService.findOne(id);
+    if (!order) throw new NotFoundException('Order not found');
+
+    const pdf = await this.invoiceService.generateBill(order);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="bill-${deriveOrderNumber(order)}.pdf"`,
+    });
+    return new StreamableFile(pdf);
+  }
+
+  @Get(':id/items/:itemId/label')
+  async printItemLabel(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const order = await this.orderService.findOne(id);
+    if (!order) throw new NotFoundException('Order not found');
+
+    const item = (order.orderItems || []).find((i: any) => i.id === itemId);
+    if (!item) throw new NotFoundException('Order item not found');
+
+    const pdf = await this.invoiceService.generateLabel(item, order);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="label-${deriveOrderNumber(order)}.pdf"`,
+    });
+    return new StreamableFile(pdf);
+  }
+
   @Patch('confirm/:id')
-  confirmOrder(@Param('id') id: string) {
-    return this.orderService.confirmOrder(id);
+  async confirmOrder(@Param('id') id: string) {
+    const result = await this.orderService.confirmOrder(id);
+    await this.whatsappService.sendOrderBill(id);
+    return result;
   }
 
   @Patch('cancel/:id')
@@ -62,6 +107,9 @@ export class OrderController {
     if (customerPhone) {
       await this.whatsappService.sendOrderConfirmationMessage(customerPhone, order);
     }
+
+    // Verified payment confirms the order — send the bill PDF (idempotent).
+    await this.whatsappService.sendOrderBill(id);
 
     return { success: true };
   }
@@ -91,6 +139,11 @@ export class OrderController {
           order,
         );
       }
+    }
+
+    // If this update confirmed the order, send the bill PDF (idempotent).
+    if (statusChanged && order.status === OrderStatus.CONFIRMED) {
+      await this.whatsappService.sendOrderBill(id);
     }
 
     return order;

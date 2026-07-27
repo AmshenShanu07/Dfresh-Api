@@ -62,6 +62,13 @@ export class OrderDetails {
   @Column({ type: 'varchar', nullable: true })
   deliveryAgentId: string | null;
 
+  // When the customer bill PDF was sent over WhatsApp. Set once by
+  // WhatsappService.sendOrderBill so the several confirm paths (admin confirm,
+  // COD select, UPI verify, status update) can each trigger a send without
+  // ever re-sending. Null until the first successful send.
+  @Column({ type: 'timestamp', nullable: true })
+  billSentAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

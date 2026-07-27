@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { WhatsappService } from './whatsapp.service';
 import { WhatsappController } from './whatsapp.controller';
 import { OrderService } from '../order/order.service';
+import { InvoiceService } from '../order/invoice.service';
 import { UploadService } from '../upload/upload.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User, UserAddress } from '../users/entities/user.entity';
@@ -21,7 +22,7 @@ import { Outlets } from '../outlet/entities/outlet.entity';
 @Module({
   imports: [TypeOrmModule.forFeature([User, UserAddress, Products, ProductVariant, OrderDetails, OrderItems, DeliveryDetails, Category, ShareCatalog, ShareCatalogProducts, ShareCatalogProductStock, Cart, CartItem, Staff, Outlets]), WardModule],
   controllers: [WhatsappController],
-  providers: [WhatsappService, OrderService, UploadService, CartService],
+  providers: [WhatsappService, OrderService, UploadService, CartService, InvoiceService],
   exports: [WhatsappService],
 })
 export class WhatsappModule {}

@@ -13,6 +13,7 @@ import { Outlets } from '../outlet/entities/outlet.entity';
 import { JwtService } from '@nestjs/jwt';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { OrderExpiryCronService } from './order-expiry.cron';
+import { InvoiceService } from './invoice.service';
 
 @Module({
   imports: [
@@ -31,7 +32,7 @@ import { OrderExpiryCronService } from './order-expiry.cron';
     WhatsappModule,
   ],
   controllers: [OrderController],
-  providers: [OrderService, JwtService, OrderExpiryCronService],
+  providers: [OrderService, JwtService, OrderExpiryCronService, InvoiceService],
   exports: [OrderService],
 })
 export class OrderModule {}

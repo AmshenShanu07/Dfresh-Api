@@ -34,9 +34,6 @@ export class Purchase {
   @Column({ type: 'float' })
   totalPrice: number;
 
-  @Column({ type: 'float' })
-  pricePerUnit: number;
-
   @Column({ type: 'float', nullable: true })
   releasedQtny: number;
 

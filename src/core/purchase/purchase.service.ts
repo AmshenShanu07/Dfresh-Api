@@ -43,7 +43,6 @@ export class PurchaseService {
         outletId: createPurchaseDto.outletId,
         totalPrice: createPurchaseDto.totalPrice,
         supplierId: createPurchaseDto.supplierId,
-        pricePerUnit: createPurchaseDto.pricePerUnit,
         batchNumber: createPurchaseDto.batchNumber,
       }),
     );

@@ -19,6 +19,18 @@ import {
   UserTypes,
 } from 'src/common/enums';
 
+/**
+ * Result of {@link OrderService.selectPaymentMethod}.
+ *  - `updated`  — the PENDING order accepted the method (order returned).
+ *  - `locked`   — the order is no longer PENDING (CONFIRMED/CANCELLED/…), so
+ *                 the payment method was left untouched.
+ *  - `not_found`— no order with that id.
+ */
+export type SelectPaymentResult =
+  | { outcome: 'updated'; order: OrderDetails | null }
+  | { outcome: 'locked'; order: OrderDetails }
+  | { outcome: 'not_found' };
+
 @Injectable()
 export class OrderService {
   constructor(
@@ -374,6 +386,15 @@ export class OrderService {
     return { success: true };
   }
 
+  /**
+   * Stamps when the customer bill PDF was sent over WhatsApp. Idempotency for
+   * the send itself is enforced by the caller (WhatsappService.sendOrderBill)
+   * checking billSentAt before sending; this just records the timestamp.
+   */
+  async markBillSent(id: string) {
+    await this.orderDetailsRepository.update(id, { billSentAt: new Date() });
+  }
+
   async cancelOrder(id: string) {
     // Credit any reserved/deducted stock back before cancelling.
     await this.restoreStock(id);
@@ -534,7 +555,31 @@ export class OrderService {
     }
   }
 
-  async selectPaymentMethod(orderId: string, method: PaymentMethod) {
+  /**
+   * Records the customer's chosen payment method for an order.
+   *
+   * Only a PENDING order may change payment method — that is the single state
+   * in which the WhatsApp payment buttons are legitimately outstanding. The
+   * buttons stay in the chat history forever, so a customer can re-tap them
+   * after the order has moved on; without this guard a tap would silently flip
+   * the method and re-run confirmation. Blocked cases:
+   *  - CONFIRMED (COD chosen, or UPI paid + admin-verified) → already final.
+   *  - CANCELLED (e.g. auto-expired) → a stale tap must not revive it.
+   * UPI↔COD switching while the order is still PENDING (awaiting screenshot /
+   * verification) remains allowed.
+   */
+  async selectPaymentMethod(
+    orderId: string,
+    method: PaymentMethod,
+  ): Promise<SelectPaymentResult> {
+    const existing = await this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+    });
+    if (!existing) return { outcome: 'not_found' };
+    if (existing.status !== OrderStatus.PENDING) {
+      return { outcome: 'locked', order: existing };
+    }
+
     const updates: Partial<OrderDetails> = { paymentMethod: method };
     if (method === PaymentMethod.COD) {
       updates.paymentStatus = PaymentStatus.NOT_REQUIRED;
@@ -549,10 +594,11 @@ export class OrderService {
       await this.applyStockDeduction(orderId);
     }
 
-    return this.orderDetailsRepository.findOne({
+    const order = await this.orderDetailsRepository.findOne({
       where: { id: orderId },
       relations: { orderItems: { product: true }, deliveryDetails: true },
     });
+    return { outcome: 'updated', order };
   }
 
   async findAwaitingScreenshotOrderByPhone(phone: string) {

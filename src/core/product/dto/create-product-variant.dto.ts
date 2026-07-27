@@ -51,6 +51,17 @@ export class CreateProductVariantDto {
   cleaningCharge?: number;
 
   @ApiProperty({
+    example: 150,
+    required: false,
+    description:
+      'Weight (in grams) lost while cleaning this variant. Only applied for WEIGHT products.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  wastageWeight?: number;
+
+  @ApiProperty({
     type: [CuttingStyleDto],
     required: false,
     description:
@@ -81,6 +92,12 @@ export class UpdateProductVariantDto {
   @IsNumber()
   @Min(0)
   cleaningCharge?: number;
+
+  @ApiProperty({ example: 150, required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  wastageWeight?: number;
 
   @ApiProperty({ type: [CuttingStyleDto], required: false })
   @IsOptional()

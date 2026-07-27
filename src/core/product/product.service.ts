@@ -293,6 +293,10 @@ export class ProductService {
             weight: amountInBase,
             unit: variantDto.unit,
             cleaningCharge: cleaning ? variantDto.cleaningCharge ?? 0 : 0,
+            wastageWeight:
+              measurementType === MeasurementType.WEIGHT
+                ? variantDto.wastageWeight ?? 0
+                : 0,
           }),
         );
 
@@ -325,6 +329,10 @@ export class ProductService {
         weight: amountInBase,
         unit: dto.unit,
         cleaningCharge: product.cleaning ? dto.cleaningCharge ?? 0 : 0,
+        wastageWeight:
+          product.measurementType === MeasurementType.WEIGHT
+            ? dto.wastageWeight ?? 0
+            : 0,
       }),
     );
 
@@ -371,6 +379,10 @@ export class ProductService {
     }
     if (dto.cleaningCharge !== undefined) {
       updateData.cleaningCharge = variant.product.cleaning ? dto.cleaningCharge : 0;
+    }
+    if (dto.wastageWeight !== undefined) {
+      updateData.wastageWeight =
+        measurementType === MeasurementType.WEIGHT ? dto.wastageWeight : 0;
     }
 
     if (Object.keys(updateData).length) {

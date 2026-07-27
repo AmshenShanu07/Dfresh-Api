@@ -33,11 +33,6 @@ export class CreatePurchaseDto {
   @IsNotEmpty()
   supplierId: string;
 
-  @ApiProperty({ example: 100 })
-  @IsNotEmpty()
-  @IsNumber()
-  pricePerUnit: number;
-
   @ApiProperty({ example: '' })
   @IsString()
   @IsNotEmpty()

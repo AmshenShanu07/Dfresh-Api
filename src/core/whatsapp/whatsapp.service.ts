@@ -8,11 +8,14 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { User, UserAddress } from '../users/entities/user.entity';
 import {
   MeasurementType,
+  OrderStatus,
   PaymentMethod,
   ShareCatalogStatus,
   UserTypes,
 } from 'src/common/enums';
 import { OrderService } from '../order/order.service';
+import { InvoiceService } from '../order/invoice.service';
+import { deriveOrderNumber } from '../order/order-number.util';
 import { UploadService } from '../upload/upload.service';
 import { CartService } from '../cart/cart.service';
 import { WardService } from '../ward/ward.service';
@@ -43,6 +46,7 @@ export class WhatsappService {
     private uploadService: UploadService,
     private cartService: CartService,
     private wardService: WardService,
+    private invoiceService: InvoiceService,
   ) {
     this.botToken = this.configService.get<string>('BOT_TOKEN');
     this.tgChatId = this.configService.get<string>('TG_CHAT_ID');
@@ -162,6 +166,21 @@ export class WhatsappService {
 
   async sendWelcomeMessage(name: string, phone: string) {
     try {
+      const cart = await this.cartService.getCart(phone);
+      const buttons: any[] = [
+        {
+          type: 'reply',
+          reply: { id: 'get-catlog', title: 'View Products' },
+        },
+      ];
+      // Only offer "View Cart" when the customer actually has items in it.
+      if ((cart?.cartItems?.length ?? 0) > 0) {
+        buttons.push({
+          type: 'reply',
+          reply: { id: 'cartView', title: 'View Cart' },
+        });
+      }
+
       const payload = {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
@@ -174,16 +193,7 @@ export class WhatsappService {
           },
           footer: { text: 'Fresh to home™' },
           action: {
-            buttons: [
-              {
-                type: 'reply',
-                reply: { id: 'get-catlog', title: 'View Products' },
-              },
-              {
-                type: 'reply',
-                reply: { id: 'cartView', title: 'View Cart' },
-              },
-            ],
+            buttons,
           },
         },
       };
@@ -198,6 +208,21 @@ export class WhatsappService {
   /** Main menu shown when a known customer sends arbitrary (non-greeting) text. */
   async sendMainMenu(name: string, phone: string) {
     try {
+      const cart = await this.cartService.getCart(phone);
+      const buttons: any[] = [
+        {
+          type: 'reply',
+          reply: { id: 'get-catlog', title: 'View Products' },
+        },
+      ];
+      // Only offer "View Cart" when the customer actually has items in it.
+      if ((cart?.cartItems?.length ?? 0) > 0) {
+        buttons.push({
+          type: 'reply',
+          reply: { id: 'cartView', title: 'View Cart' },
+        });
+      }
+
       const payload = {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
@@ -210,16 +235,7 @@ export class WhatsappService {
           },
           footer: { text: 'Fresh to home™' },
           action: {
-            buttons: [
-              {
-                type: 'reply',
-                reply: { id: 'get-catlog', title: 'View Products' },
-              },
-              {
-                type: 'reply',
-                reply: { id: 'cartView', title: 'View Cart' },
-              },
-            ],
+            buttons,
           },
         },
       };
@@ -1502,12 +1518,17 @@ export class WhatsappService {
 
   private async handleSelectCOD(phone: string, orderId: string) {
     try {
-      const order = await this.orderService.selectPaymentMethod(
+      const result = await this.orderService.selectPaymentMethod(
         orderId,
         PaymentMethod.COD,
       );
-      if (!order) return;
-      await this.sendCodConfirmationMessage(phone, order);
+      if (result.outcome === 'locked') {
+        return this.sendOrderLockedMessage(phone, result.order);
+      }
+      if (result.outcome !== 'updated' || !result.order) return;
+      await this.sendCodConfirmationMessage(phone, result.order);
+      // COD selection confirms the order — send the bill PDF (idempotent).
+      await this.sendOrderBill(result.order.id);
     } catch (error) {
       console.error('Error selecting COD:', error);
     }
@@ -1536,11 +1557,15 @@ export class WhatsappService {
 
   private async handleSelectUPI(phone: string, orderId: string) {
     try {
-      const order = await this.orderService.selectPaymentMethod(
+      const result = await this.orderService.selectPaymentMethod(
         orderId,
         PaymentMethod.UPI,
       );
-      if (!order) return;
+      if (result.outcome === 'locked') {
+        return this.sendOrderLockedMessage(phone, result.order);
+      }
+      if (result.outcome !== 'updated' || !result.order) return;
+      const order = result.order;
 
       const qrBuffer = await this.generateUpiQrBuffer(order.id, order.totalAmount);
       const { url } = await this.uploadService.uploadFile({
@@ -1553,6 +1578,27 @@ export class WhatsappService {
     } catch (error) {
       console.error('Error selecting UPI:', error);
     }
+  }
+
+  /**
+   * Sent when a customer taps a stale payment button on an order that is no
+   * longer PENDING (already CONFIRMED, or CANCELLED/expired). The order is left
+   * untouched; this just explains why the tap did nothing.
+   */
+  private async sendOrderLockedMessage(phone: string, order: any) {
+    const body =
+      order?.status === OrderStatus.CANCELLED
+        ? `This order is no longer active and can't be changed.\n\n` +
+          `Please place a new order to continue.`
+        : `✅ Your order is already confirmed and can't be changed.\n\n` +
+          `If you need any help, please contact support.`;
+
+    await this.waInstance.post('/messages', {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'text',
+      text: { body },
+    });
   }
 
   private async generateUpiQrBuffer(orderId: string, amount: number): Promise<Buffer> {
@@ -1580,6 +1626,59 @@ export class WhatsappService {
 
     const response = await this.waInstance.post('/messages', payload);
     console.log('UPI QR sent:', response.data);
+  }
+
+  /**
+   * Generates the customer bill PDF and sends it to the customer as a WhatsApp
+   * document. Idempotent: skips if a bill was already sent (billSentAt) or the
+   * order has no customer phone. Safe to call from every confirm path — a
+   * failure is logged and swallowed so it never breaks the confirm response.
+   */
+  async sendOrderBill(orderId: string) {
+    try {
+      const order = await this.orderService.findOne(orderId);
+      if (!order || order.billSentAt) return;
+
+      const phone = order.user?.phone ?? order.deliveryDetails?.phone;
+      if (!phone) return;
+
+      const orderNo = deriveOrderNumber(order);
+      const filename = `bill-${orderNo}.pdf`;
+      const pdf = await this.invoiceService.generateBill(order);
+      const { url } = await this.uploadService.uploadFile({
+        buffer: pdf,
+        mimetype: 'application/pdf',
+        originalname: filename,
+      });
+
+      await this.sendDocument(
+        phone,
+        url,
+        filename,
+        `🧾 Your D-Fresh bill for order ${orderNo}.`,
+      );
+      await this.orderService.markBillSent(orderId);
+    } catch (error) {
+      await this.sendLog(
+        `sendOrderBill failed for ${orderId}: ${error?.message || error}`,
+      );
+    }
+  }
+
+  private async sendDocument(
+    phone: string,
+    url: string,
+    filename: string,
+    caption?: string,
+  ) {
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'document',
+      document: { link: url, filename, ...(caption ? { caption } : {}) },
+    };
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Bill document sent:', response.data);
   }
 
   private async handlePaymentScreenshot(phone: string, mediaId: string) {

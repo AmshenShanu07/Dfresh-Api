@@ -36,6 +36,14 @@ export class ProductVariant {
   @Column({ type: 'float', default: 0 })
   cleaningCharge: number;
 
+  /**
+   * Optional weight (in the product's base unit, grams) lost while cleaning this
+   * variant — e.g. a 1kg fish that loses 150g when cleaned. Only meaningful for
+   * WEIGHT products; kept at 0 for VOLUME/COUNT.
+   */
+  @Column({ type: 'float', default: 0 })
+  wastageWeight: number;
+
   @Column({ type: 'boolean', default: false })
   isActive: boolean;
 
