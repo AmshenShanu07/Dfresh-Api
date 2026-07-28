@@ -13,11 +13,13 @@ import { UploadModule } from './core/upload/upload.module';
 import { OrderModule } from './core/order/order.module';
 import { WardModule } from './core/ward/ward.module';
 import { CuttingStyleModule } from './core/cutting-style/cutting-style.module';
+import { MessagesModule } from './common/messages/messages.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
+    MessagesModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: './.env',

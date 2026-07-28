@@ -19,6 +19,7 @@ import { deriveOrderNumber } from '../order/order-number.util';
 import { UploadService } from '../upload/upload.service';
 import { CartService } from '../cart/cart.service';
 import { WardService } from '../ward/ward.service';
+import { MessagesService } from 'src/common/messages/messages.service';
 import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
 import {
   IST_TZ,
@@ -48,6 +49,7 @@ export class WhatsappService {
     private cartService: CartService,
     private wardService: WardService,
     private invoiceService: InvoiceService,
+    private messages: MessagesService,
   ) {
     this.botToken = this.configService.get<string>('BOT_TOKEN');
     this.tgChatId = this.configService.get<string>('TG_CHAT_ID');
@@ -165,23 +167,33 @@ export class WhatsappService {
     }
   }
 
+  /** Entry buttons shown with the welcome / main menu. */
+  private async entryButtons(phone: string): Promise<any[]> {
+    const cart = await this.cartService.getCart(phone);
+    const buttons: any[] = [
+      {
+        type: 'reply',
+        reply: {
+          id: 'get-catlog',
+          title: this.messages.get('onboarding.buttonViewProducts'),
+        },
+      },
+    ];
+    // Only offer "View Cart" when the customer actually has items in it.
+    if ((cart?.cartItems?.length ?? 0) > 0) {
+      buttons.push({
+        type: 'reply',
+        reply: {
+          id: 'cartView',
+          title: this.messages.get('onboarding.buttonViewCart'),
+        },
+      });
+    }
+    return buttons;
+  }
+
   async sendWelcomeMessage(name: string, phone: string) {
     try {
-      const cart = await this.cartService.getCart(phone);
-      const buttons: any[] = [
-        {
-          type: 'reply',
-          reply: { id: 'get-catlog', title: 'View Products' },
-        },
-      ];
-      // Only offer "View Cart" when the customer actually has items in it.
-      if ((cart?.cartItems?.length ?? 0) > 0) {
-        buttons.push({
-          type: 'reply',
-          reply: { id: 'cartView', title: 'View Cart' },
-        });
-      }
-
       const payload = {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
@@ -189,12 +201,10 @@ export class WhatsappService {
         type: 'interactive',
         interactive: {
           type: 'button',
-          body: {
-            text: `Hey ${name}!\nWelcome to Dfresh! \nPlease checkout our catlog for the best deals!`,
-          },
-          footer: { text: 'Fresh to home™' },
+          body: { text: this.messages.get('onboarding.welcome', { name }) },
+          footer: { text: this.messages.get('common.footer') },
           action: {
-            buttons,
+            buttons: await this.entryButtons(phone),
           },
         },
       };
@@ -209,21 +219,6 @@ export class WhatsappService {
   /** Main menu shown when a known customer sends arbitrary (non-greeting) text. */
   async sendMainMenu(name: string, phone: string) {
     try {
-      const cart = await this.cartService.getCart(phone);
-      const buttons: any[] = [
-        {
-          type: 'reply',
-          reply: { id: 'get-catlog', title: 'View Products' },
-        },
-      ];
-      // Only offer "View Cart" when the customer actually has items in it.
-      if ((cart?.cartItems?.length ?? 0) > 0) {
-        buttons.push({
-          type: 'reply',
-          reply: { id: 'cartView', title: 'View Cart' },
-        });
-      }
-
       const payload = {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
@@ -231,12 +226,10 @@ export class WhatsappService {
         type: 'interactive',
         interactive: {
           type: 'button',
-          body: {
-            text: `Hi ${name}! What would you like to do?`,
-          },
-          footer: { text: 'Fresh to home™' },
+          body: { text: this.messages.get('onboarding.mainMenu', { name }) },
+          footer: { text: this.messages.get('common.footer') },
           action: {
-            buttons,
+            buttons: await this.entryButtons(phone),
           },
         },
       };
@@ -250,9 +243,9 @@ export class WhatsappService {
 
   private async sendNamePromptMessage(phone: string, isReprompt = false) {
     try {
-      const body = isReprompt
-        ? 'Please share your name first to continue. Reply with your name.'
-        : 'Hi! Welcome to D-Fresh. Please reply with your name to get started.';
+      const body = this.messages.get(
+        isReprompt ? 'onboarding.nameReprompt' : 'onboarding.namePrompt',
+      );
 
       const payload = {
         messaging_product: 'whatsapp',
@@ -284,10 +277,7 @@ export class WhatsappService {
         return this.sendUnavailableMessage(phone);
       }
 
-      await this.sendText(
-        phone,
-        "Hey! Our fresh catalog is live now 🥬\nTap below to browse and place your order.",
-      );
+      await this.sendText(phone, this.messages.get('catalog.broadcast'));
 
       return this.sendCategoryList(phone);
     } catch (error: any) {
@@ -422,10 +412,7 @@ export class WhatsappService {
   }
 
   private async sendOutOfStockMessage(phone: string) {
-    return this.sendText(
-      phone,
-      'All products are currently out of stock. Please try again after some time.',
-    );
+    return this.sendText(phone, this.messages.get('availability.outOfStock'));
   }
 
   /** Remaining offered grams for a product within the open catalog. */
@@ -511,10 +498,16 @@ export class WhatsappService {
     const rows: any[] = pageCategories.map((c) => ({
       id: `pickCat~${c.id}`,
       title: this.truncate(c.name, 24),
-      description: `${c.productCount} item${c.productCount === 1 ? '' : 's'} available`,
+      description: this.messages.get(
+        c.productCount === 1 ? 'category.rowCountOne' : 'category.rowCount',
+        { count: c.productCount },
+      ),
     }));
     if (moreRow) {
-      rows.push({ id: `catPage~${page + 1}`, title: 'More categories' });
+      rows.push({
+        id: `catPage~${page + 1}`,
+        title: this.messages.get('category.listMore'),
+      });
     }
 
     const payload = {
@@ -524,12 +517,12 @@ export class WhatsappService {
       type: 'interactive',
       interactive: {
         type: 'list',
-        header: { type: 'text', text: 'Shop by Category' },
-        body: { text: "Tap a category to see what's fresh right now." },
-        footer: { text: 'Fresh to home™' },
+        header: { type: 'text', text: this.messages.get('category.listHeader') },
+        body: { text: this.messages.get('category.listBody') },
+        footer: { text: this.messages.get('common.footer') },
         action: {
-          button: 'View Categories',
-          sections: [{ title: 'Categories', rows }],
+          button: this.messages.get('category.listButton'),
+          sections: [{ title: this.messages.get('category.listSection'), rows }],
         },
       },
     };
@@ -606,12 +599,13 @@ export class WhatsappService {
       // The category emptied out between the customer seeing it and tapping it
       // (or the reply carried a stale category id). Say so, then re-offer the
       // refreshed list — without auto-skipping, so we can't bounce back here.
-      await this.sendText(phone, 'Sorry, that category just sold out.');
+      await this.sendText(phone, this.messages.get('category.soldOut'));
       return this.sendCategoryList(phone, 0, false);
     }
 
     const categoryName =
-      entries[0].product?.category?.name ?? 'Products';
+      entries[0].product?.category?.name ??
+      this.messages.get('catalog.listSectionFallback');
 
     // WhatsApp caps a list at 10 rows, and the back row costs one of them.
     const backRows = showBack ? 1 : 0;
@@ -640,11 +634,11 @@ export class WhatsappService {
     if (moreRow) {
       rows.push({
         id: `prodPage~${categoryId}~${page + 1}`,
-        title: 'More products',
+        title: this.messages.get('catalog.listMore'),
       });
     }
     if (showBack) {
-      rows.push({ id: 'catList', title: '⬅️ Back to categories' });
+      rows.push({ id: 'catList', title: this.messages.get('category.backRow') });
     }
 
     const payload = {
@@ -654,13 +648,11 @@ export class WhatsappService {
       type: 'interactive',
       interactive: {
         type: 'list',
-        header: { type: 'text', text: 'Our Products' },
-        body: {
-          text: 'Tap a product to see available weights and place your order.',
-        },
-        footer: { text: 'Daily Fresh™' },
+        header: { type: 'text', text: this.messages.get('catalog.listHeader') },
+        body: { text: this.messages.get('catalog.listBody') },
+        footer: { text: this.messages.get('common.productListFooter') },
         action: {
-          button: 'View Products',
+          button: this.messages.get('catalog.listButton'),
           sections: [{ title: this.truncate(categoryName, 24), rows }],
         },
       },
@@ -683,19 +675,21 @@ export class WhatsappService {
     );
 
     if (entries.length === 0) {
-      await this.sendText(phone, 'Sorry, that product is no longer available.');
+      await this.sendText(phone, this.messages.get('variant.unavailable'));
       return this.sendCategoryList(phone);
     }
 
-    const productName = entries[0].product?.name ?? 'Product';
-    const measurementType =
-      entries[0].product?.measurementType ?? MeasurementType.WEIGHT;
-    const noun = this.optionNoun(measurementType); // weight / size / pack
+    const productName = entries[0].product?.name ?? this.messages.get('common.fallbackProduct');
+    // The wording of the list depends on the measurement family: a weight, a
+    // size or a pack. Each family has its own authored phrases.
+    const family = this.measurementSuffix(
+      entries[0].product?.measurementType ?? MeasurementType.WEIGHT,
+    );
 
     const rows = entries.slice(0, 10).map((e: any) => ({
       id: `pickVariant~${e.variantId}`,
       title: this.truncate(this.formatWeight(e.variant), 24),
-      description: `₹${e.price}`,
+      description: this.messages.get('variant.rowPrice', { price: e.price }),
     }));
 
     const payload = {
@@ -706,12 +700,12 @@ export class WhatsappService {
       interactive: {
         type: 'list',
         header: { type: 'text', text: this.truncate(productName, 60) },
-        body: { text: `Choose a ${noun}.` },
-        footer: { text: 'Fresh to home™' },
+        body: { text: this.messages.get(`variant.listBody${family}`) },
+        footer: { text: this.messages.get('common.footer') },
         action: {
-          button: `Select ${this.capitalize(noun)}`,
+          button: this.messages.get(`variant.listButton${family}`),
           sections: [
-            { title: `Available ${this.capitalize(noun)}s`, rows },
+            { title: this.messages.get(`variant.listSection${family}`), rows },
           ],
         },
       },
@@ -724,7 +718,7 @@ export class WhatsappService {
   async askCleaning(phone: string, variantId: string) {
     const entry = await this.findCatalogEntry(variantId);
     if (!entry) {
-      await this.sendText(phone, 'Sorry, that item is no longer available.');
+      await this.sendText(phone, this.messages.get('prep.unavailable'));
       return this.sendCategoryList(phone);
     }
 
@@ -734,11 +728,12 @@ export class WhatsappService {
     }
 
     const charge = entry.variant.cleaningCharge ?? 0;
-    const chargeText = charge > 0 ? ` (+₹${charge})` : '';
+    const chargeSuffix =
+      charge > 0 ? this.messages.get('prep.cleaningChargeSuffix', { charge }) : '';
 
     return this.sendYesNoButtons(
       phone,
-      `Would you like this item cleaned?${chargeText}`,
+      this.messages.get('prep.cleaningQuestion', { chargeSuffix }),
       `clean~${variantId}~y`,
       `clean~${variantId}~n`,
     );
@@ -747,7 +742,7 @@ export class WhatsappService {
   async askCutting(phone: string, variantId: string, clean: string) {
     const entry = await this.findCatalogEntry(variantId);
     if (!entry) {
-      await this.sendText(phone, 'Sorry, that item is no longer available.');
+      await this.sendText(phone, this.messages.get('prep.unavailable'));
       return this.sendCategoryList(phone);
     }
 
@@ -758,7 +753,7 @@ export class WhatsappService {
 
     return this.sendYesNoButtons(
       phone,
-      'Would you like this item cut?',
+      this.messages.get('prep.cuttingQuestion'),
       `cut~${variantId}~${clean}~y`,
       `cut~${variantId}~${clean}~n`,
     );
@@ -767,7 +762,7 @@ export class WhatsappService {
   async askCuttingOption(phone: string, variantId: string, clean: string) {
     const entry = await this.findCatalogEntry(variantId);
     if (!entry) {
-      await this.sendText(phone, 'Sorry, that item is no longer available.');
+      await this.sendText(phone, this.messages.get('prep.unavailable'));
       return this.sendCategoryList(phone);
     }
 
@@ -788,7 +783,10 @@ export class WhatsappService {
     const rows = styles.slice(0, 10).map((s: any) => ({
       id: `cutopt~${variantId}~${clean}~${s.cuttingStyleId}`,
       title: this.truncate(s.cuttingStyle.name, 24),
-      description: s.price > 0 ? `+₹${s.price}` : 'Free',
+      description:
+        s.price > 0
+          ? this.messages.get('prep.cuttingRowPrice', { price: s.price })
+          : this.messages.get('prep.cuttingRowFree'),
     }));
 
     const payload = {
@@ -798,11 +796,13 @@ export class WhatsappService {
       type: 'interactive',
       interactive: {
         type: 'list',
-        body: { text: 'How would you like it cut?' },
-        footer: { text: 'Fresh to home™' },
+        body: { text: this.messages.get('prep.cuttingListBody') },
+        footer: { text: this.messages.get('common.footer') },
         action: {
-          button: 'Choose Cut',
-          sections: [{ title: 'Cutting Options', rows }],
+          button: this.messages.get('prep.cuttingListButton'),
+          sections: [
+            { title: this.messages.get('prep.cuttingListSection'), rows },
+          ],
         },
       },
     };
@@ -820,11 +820,11 @@ export class WhatsappService {
   ) {
     const entry = await this.findCatalogEntry(variantId);
     if (!entry) {
-      await this.sendText(phone, 'Sorry, that item is no longer available.');
+      await this.sendText(phone, this.messages.get('prep.unavailable'));
       return this.sendCategoryList(phone);
     }
 
-    const productName = entry.product?.name ?? 'Product';
+    const productName = entry.product?.name ?? this.messages.get('common.fallbackProduct');
     const weight = this.formatWeight(entry.variant);
     const price = entry.price;
 
@@ -834,21 +834,30 @@ export class WhatsappService {
       cut === 'y' ? this.getCuttingPrice(entry.variant, cuttingOption) : 0;
     const total = price + cleaningCharge + cuttingCharge;
 
-    const lines = [`${productName} — ${weight}`, `Base price: ₹${price}`];
+    const lines = [
+      this.messages.get('item.lineProduct', { product: productName, weight }),
+      this.messages.get('item.lineBasePrice', { price }),
+    ];
     if (clean === 'y') {
-      lines.push(`Cleaning: +₹${cleaningCharge}`);
+      lines.push(this.messages.get('item.lineCleaning', { charge: cleaningCharge }));
     }
     if (cut === 'y') {
       // cuttingOption carries the cutting-style id; resolve its display name.
-      const styleName = this.getCuttingStyleName(entry.variant, cuttingOption);
-      const label = styleName ? `Cutting (${styleName})` : 'Cutting';
-      lines.push(`${label}: +₹${cuttingCharge}`);
+      const style = this.getCuttingStyleName(entry.variant, cuttingOption);
+      lines.push(
+        style
+          ? this.messages.get('item.lineCuttingWithStyle', {
+              style,
+              charge: cuttingCharge,
+            })
+          : this.messages.get('item.lineCutting', { charge: cuttingCharge }),
+      );
     }
 
-    const body =
-      `🧾 *Order Summary*\n\n` +
-      lines.join('\n') +
-      `\n\n*Total: ₹${total}*`;
+    const body = this.messages.get('item.summary', {
+      lines: lines.join('\n'),
+      total,
+    });
 
     const payload = {
       messaging_product: 'whatsapp',
@@ -858,19 +867,22 @@ export class WhatsappService {
       interactive: {
         type: 'button',
         body: { text: body },
-        footer: { text: 'Fresh to home™' },
+        footer: { text: this.messages.get('common.footer') },
         action: {
           buttons: [
             {
               type: 'reply',
               reply: {
                 id: `addToCart~${variantId}~${clean}~${cut}~${cuttingOption}`,
-                title: 'Add to Cart',
+                title: this.messages.get('item.buttonAddToCart'),
               },
             },
             {
               type: 'reply',
-              reply: { id: 'cancelItem', title: 'Cancel' },
+              reply: {
+                id: 'cancelItem',
+                title: this.messages.get('item.buttonCancel'),
+              },
             },
           ],
         },
@@ -891,7 +903,7 @@ export class WhatsappService {
   ) {
     const entry = await this.findCatalogEntry(variantId);
     if (!entry) {
-      await this.sendText(phone, 'Sorry, that item is no longer available.');
+      await this.sendText(phone, this.messages.get('prep.unavailable'));
       return this.sendCategoryList(phone);
     }
 
@@ -920,7 +932,7 @@ export class WhatsappService {
     });
 
     if (!cart) {
-      return this.sendText(phone, 'Could not add the item to your cart. Please try again.');
+      return this.sendText(phone, this.messages.get('cart.addFailed'));
     }
 
     return this.sendCartSummary(phone);
@@ -936,16 +948,36 @@ export class WhatsappService {
 
   /** Builds a one-line label for a cart item, e.g. "Chicken — 1 kg (Cleaned, Curry) x2". */
   private cartItemLabel(item: any): string {
-    const product = item.product?.name ?? 'Item';
     const weight = item.variant ? this.formatWeight(item.variant) : '';
     const addOns: string[] = [];
-    if (item.cleaning) addOns.push('Cleaned');
+    if (item.cleaning) addOns.push(this.messages.get('cart.addOnCleaned'));
     if (item.cutting) {
-      addOns.push(item.cuttingOption ? `Cut: ${item.cuttingOption}` : 'Cut');
+      addOns.push(
+        item.cuttingOption
+          ? this.messages.get('cart.addOnCutWithStyle', {
+              style: item.cuttingOption,
+            })
+          : this.messages.get('cart.addOnCut'),
+      );
     }
-    const addOnText = addOns.length ? ` (${addOns.join(', ')})` : '';
-    const qtyText = item.quantity > 1 ? ` x${item.quantity}` : '';
-    return `${product}${weight ? ` — ${weight}` : ''}${addOnText}${qtyText}`;
+
+    return this.messages.get('cart.label', {
+      product: item.product?.name ?? this.messages.get('common.fallbackItem'),
+      weightPart: weight
+        ? this.messages.get('cart.labelWeightPart', { weight })
+        : '',
+      addOnPart: addOns.length
+        ? this.messages.get('cart.labelAddOnPart', {
+            addOns: addOns.join(this.messages.get('cart.labelAddOnSeparator')),
+          })
+        : '',
+      quantityPart:
+        item.quantity > 1
+          ? this.messages.get('cart.labelQuantityPart', {
+              quantity: item.quantity,
+            })
+          : '',
+    });
   }
 
   async sendCartSummary(phone: string) {
@@ -953,12 +985,15 @@ export class WhatsappService {
     const items = cart?.cartItems ?? [];
 
     if (items.length === 0) {
-      await this.sendText(phone, 'Your cart is empty. Here are the products again.');
+      await this.sendText(phone, this.messages.get('cart.empty'));
       return this.sendCategoryList(phone);
     }
 
-    const lines = items.map(
-      (item: any) => `• ${this.cartItemLabel(item)} — ₹${this.cartLineTotal(item)}`,
+    const lines = items.map((item: any) =>
+      this.messages.get('cart.line', {
+        label: this.cartItemLabel(item),
+        lineTotal: this.cartLineTotal(item),
+      }),
     );
     const totalQty = items.reduce((acc: number, i: any) => acc + i.quantity, 0);
     const grandTotal = items.reduce(
@@ -966,11 +1001,11 @@ export class WhatsappService {
       0,
     );
 
-    const body =
-      `🛒 *Your Cart*\n\n` +
-      lines.join('\n') +
-      `\n\nTotal items: ${totalQty}` +
-      `\n*Total: ₹${grandTotal}*`;
+    const body = this.messages.get('cart.summary', {
+      lines: lines.join('\n'),
+      totalQuantity: totalQty,
+      grandTotal,
+    });
 
     const payload = {
       messaging_product: 'whatsapp',
@@ -980,12 +1015,30 @@ export class WhatsappService {
       interactive: {
         type: 'button',
         body: { text: body },
-        footer: { text: 'Fresh to home™' },
+        footer: { text: this.messages.get('common.footer') },
         action: {
           buttons: [
-            { type: 'reply', reply: { id: 'cartAddMore', title: 'Add more' } },
-            { type: 'reply', reply: { id: 'cartRemove', title: 'Remove item' } },
-            { type: 'reply', reply: { id: 'cartBuyNow', title: 'Buy it now' } },
+            {
+              type: 'reply',
+              reply: {
+                id: 'cartAddMore',
+                title: this.messages.get('cart.buttonAddMore'),
+              },
+            },
+            {
+              type: 'reply',
+              reply: {
+                id: 'cartRemove',
+                title: this.messages.get('cart.buttonRemove'),
+              },
+            },
+            {
+              type: 'reply',
+              reply: {
+                id: 'cartBuyNow',
+                title: this.messages.get('cart.buttonBuyNow'),
+              },
+            },
           ],
         },
       },
@@ -1007,7 +1060,9 @@ export class WhatsappService {
     const rows = items.slice(0, 10).map((item: any) => ({
       id: `cartDel~${item.id}`,
       title: this.truncate(this.cartItemLabel(item), 24),
-      description: `₹${this.cartLineTotal(item)}`,
+      description: this.messages.get('cart.removeRowPrice', {
+        lineTotal: this.cartLineTotal(item),
+      }),
     }));
 
     const payload = {
@@ -1017,12 +1072,17 @@ export class WhatsappService {
       type: 'interactive',
       interactive: {
         type: 'list',
-        header: { type: 'text', text: 'Remove an item' },
-        body: { text: 'Select an item to remove from your cart.' },
-        footer: { text: 'Fresh to home™' },
+        header: {
+          type: 'text',
+          text: this.messages.get('cart.removeListHeader'),
+        },
+        body: { text: this.messages.get('cart.removeListBody') },
+        footer: { text: this.messages.get('common.footer') },
         action: {
-          button: 'Remove',
-          sections: [{ title: 'Cart Items', rows }],
+          button: this.messages.get('cart.removeListButton'),
+          sections: [
+            { title: this.messages.get('cart.removeListSection'), rows },
+          ],
         },
       },
     };
@@ -1033,7 +1093,7 @@ export class WhatsappService {
 
   async handleRemoveCartItem(phone: string, cartItemId: string) {
     await this.cartService.removeItem(phone, cartItemId);
-    await this.sendText(phone, 'Item removed from your cart.');
+    await this.sendText(phone, this.messages.get('cart.itemRemoved'));
     return this.sendCartSummary(phone);
   }
 
@@ -1043,7 +1103,7 @@ export class WhatsappService {
     const items = cart?.cartItems ?? [];
 
     if (items.length === 0) {
-      await this.sendText(phone, 'Your cart is empty. Here are the products again.');
+      await this.sendText(phone, this.messages.get('cart.empty'));
       return this.sendCategoryList(phone);
     }
 
@@ -1083,7 +1143,7 @@ export class WhatsappService {
   }
 
   private async handleCancelItem(phone: string) {
-    await this.sendText(phone, 'No problem — here are the products again.');
+    await this.sendText(phone, this.messages.get('item.cancelled'));
     return this.sendCategoryList(phone);
   }
 
@@ -1105,12 +1165,14 @@ export class WhatsappService {
     }
 
     const body = nextStart
-      ? `We're not in active hours right now.\nOur next active window opens on ${formatInTimeZone(
-          nextStart,
-          IST_TZ,
-          "EEE, d MMM 'at' h:mm a",
-        )} IST.\nPlease message us then.`
-      : `We're not in active hours right now. Please check back later.`;
+      ? this.messages.get('availability.offHoursWithNext', {
+          nextWindow: formatInTimeZone(
+            nextStart,
+            IST_TZ,
+            "EEE, d MMM 'at' h:mm a",
+          ),
+        })
+      : this.messages.get('availability.offHours');
 
     return this.sendText(phone, body);
   }
@@ -1129,11 +1191,17 @@ export class WhatsappService {
       interactive: {
         type: 'button',
         body: { text: bodyText },
-        footer: { text: 'Fresh to home™' },
+        footer: { text: this.messages.get('common.footer') },
         action: {
           buttons: [
-            { type: 'reply', reply: { id: yesId, title: 'Yes' } },
-            { type: 'reply', reply: { id: noId, title: 'No' } },
+            {
+              type: 'reply',
+              reply: { id: yesId, title: this.messages.get('common.buttonYes') },
+            },
+            {
+              type: 'reply',
+              reply: { id: noId, title: this.messages.get('common.buttonNo') },
+            },
           ],
         },
       },
@@ -1153,15 +1221,15 @@ export class WhatsappService {
     });
   }
 
-  /** Customer-facing noun for a product's variant options, by family. */
-  private optionNoun(type: MeasurementType): string {
-    if (type === MeasurementType.VOLUME) return 'size';
-    if (type === MeasurementType.COUNT) return 'pack';
-    return 'weight';
-  }
-
-  private capitalize(text: string): string {
-    return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+  /**
+   * Message-key suffix for a measurement family, e.g. `variant.listBodyWeight`.
+   * Each family gets its own authored phrase rather than a noun spliced into a
+   * sentence, which does not survive translation.
+   */
+  private measurementSuffix(type: MeasurementType): string {
+    if (type === MeasurementType.VOLUME) return 'Volume';
+    if (type === MeasurementType.COUNT) return 'Count';
+    return 'Weight';
   }
 
   private formatWeight(variant: any): string {
@@ -1190,23 +1258,31 @@ export class WhatsappService {
     minUnitPrice: number | null;
     fallbackPrice: number;
   }): string {
-    const unitSuffix =
-      p.measurementType === MeasurementType.VOLUME
-        ? '/L'
-        : p.measurementType === MeasurementType.COUNT
-          ? '/piece'
-          : '/kg';
+    const unitSuffix = this.messages.get(
+      `catalog.unitSuffix${this.measurementSuffix(p.measurementType)}`,
+    );
     const price =
       p.minUnitPrice !== null
-        ? `₹${Math.round(p.minUnitPrice)}${unitSuffix}`
-        : `₹${p.fallbackPrice}`;
+        ? this.messages.get('catalog.subtitlePriceUnit', {
+            price: Math.round(p.minUnitPrice),
+            unitSuffix,
+          })
+        : this.messages.get('catalog.subtitlePriceFlat', {
+            price: p.fallbackPrice,
+          });
 
     const options: string[] = [];
-    if (p.cleaning) options.push('🧼 Cleaning');
-    if (p.cutting) options.push('🔪 Cutting');
-    const optionsPart = options.length ? options.join(' · ') : '—';
+    if (p.cleaning) options.push(this.messages.get('catalog.optionCleaning'));
+    if (p.cutting) options.push(this.messages.get('catalog.optionCutting'));
+    const separator = this.messages.get('common.separator');
+    const optionsPart = options.length
+      ? options.join(separator)
+      : this.messages.get('common.none');
 
-    return this.truncate(`${price} · ${optionsPart}`, 72);
+    return this.truncate(
+      this.messages.get('catalog.subtitle', { price, separator, options: optionsPart }),
+      72,
+    );
   }
 
   private truncate(text: string, max: number): string {
@@ -1300,13 +1376,29 @@ export class WhatsappService {
     const rows: any[] = pageWards.map((w) => ({
       id: `pickWard~${w.id}${suffix}`,
       title: this.truncate(
-        w.wardName ? `${w.wardName} (${w.wardNumber})` : `Ward ${w.wardNumber}`,
+        w.wardName
+          ? this.messages.get('address.wardRowNamed', {
+              wardName: w.wardName,
+              wardNumber: w.wardNumber,
+            })
+          : this.messages.get('address.wardRowUnnamed', {
+              wardNumber: w.wardNumber,
+            }),
         24,
       ),
-      description: this.truncate(`${w.localBodyName}, ${w.districtName}`, 72),
+      description: this.truncate(
+        this.messages.get('address.wardRowDescription', {
+          localBodyName: w.localBodyName,
+          districtName: w.districtName,
+        }),
+        72,
+      ),
     }));
     if (moreRow) {
-      rows.push({ id: `wardPage~${page + 1}${suffix}`, title: 'More wards' });
+      rows.push({
+        id: `wardPage~${page + 1}${suffix}`,
+        title: this.messages.get('address.wardListMore'),
+      });
     }
 
     const payload = {
@@ -1316,12 +1408,17 @@ export class WhatsappService {
       type: 'interactive',
       interactive: {
         type: 'list',
-        header: { type: 'text', text: 'Select your ward' },
-        body: { text: 'Choose the ward your delivery address falls under.' },
-        footer: { text: 'Fresh to home™' },
+        header: {
+          type: 'text',
+          text: this.messages.get('address.wardListHeader'),
+        },
+        body: { text: this.messages.get('address.wardListBody') },
+        footer: { text: this.messages.get('common.footer') },
         action: {
-          button: 'Select Ward',
-          sections: [{ title: 'Active Wards', rows }],
+          button: this.messages.get('address.wardListButton'),
+          sections: [
+            { title: this.messages.get('address.wardListSection'), rows },
+          ],
         },
       },
     };
@@ -1370,14 +1467,14 @@ export class WhatsappService {
       type: 'interactive',
       interactive: {
         type: 'flow',
-        body: { text: 'Please share your delivery address' },
-        footer: { text: 'Fresh to home™' },
+        body: { text: this.messages.get('address.flowPrompt') },
+        footer: { text: this.messages.get('common.footer') },
         action: {
           name: 'flow',
           parameters: {
             flow_message_version: '3',
             flow_id: '902959149367544',
-            flow_cta: 'Enter Address',
+            flow_cta: this.messages.get('address.flowButton'),
             flow_token: this.buildAddressFlowToken(wardId, orderId),
           },
         },
@@ -1393,13 +1490,12 @@ export class WhatsappService {
     orderId: string,
     address: UserAddress,
   ) {
-    const addressText =
-      `Please verify your delivery address:\n\n` +
-      `Name: ${address.name}\n` +
-      `Address: ${address.address}\n` +
-      `Pin Code: ${address.pinCode}\n` +
-      `Phone: ${address.phone}\n\n` +
-      `Is this correct?`;
+    const addressText = this.messages.get('address.confirm', {
+      name: address.name,
+      address: address.address,
+      pinCode: address.pinCode,
+      phone: address.phone,
+    });
 
     const payload = {
       messaging_product: 'whatsapp',
@@ -1409,16 +1505,22 @@ export class WhatsappService {
       interactive: {
         type: 'button',
         body: { text: addressText },
-        footer: { text: 'Fresh to home™' },
+        footer: { text: this.messages.get('common.footer') },
         action: {
           buttons: [
             {
               type: 'reply',
-              reply: { id: `confirmAddress-${orderId}`, title: 'Confirm Address' },
+              reply: {
+                id: `confirmAddress-${orderId}`,
+                title: this.messages.get('address.buttonConfirm'),
+              },
             },
             {
               type: 'reply',
-              reply: { id: `addAddress-${orderId}`, title: 'Add New Address' },
+              reply: {
+                id: `addAddress-${orderId}`,
+                title: this.messages.get('address.buttonAddNew'),
+              },
             },
           ],
         },
@@ -1497,39 +1599,70 @@ export class WhatsappService {
     }
   }
 
+  /** One "• Chicken - 2 × 1 kg (Cleaning +₹40) - ₹560" line of an order. */
+  private orderItemLine(item: any): string {
+    const addOns: string[] = [];
+    if (item.cleaning) {
+      addOns.push(
+        this.messages.get('order.addOnCleaning', {
+          charge: item.cleaningCharge ?? 0,
+        }),
+      );
+    }
+    if (item.cutting) {
+      addOns.push(
+        item.cuttingOption
+          ? this.messages.get('order.addOnCuttingWithStyle', {
+              style: item.cuttingOption,
+              charge: item.cuttingCharge ?? 0,
+            })
+          : this.messages.get('order.addOnCutting', {
+              charge: item.cuttingCharge ?? 0,
+            }),
+      );
+    }
+
+    const unit = item.variant ? this.formatWeight(item.variant) : '';
+    return this.messages.get('order.line', {
+      product: item.product?.name ?? this.messages.get('common.fallbackProduct'),
+      quantity: unit
+        ? this.messages.get('order.lineQuantityWithUnit', {
+            quantity: item.quantity,
+            unit,
+          })
+        : this.messages.get('order.lineQuantity', { quantity: item.quantity }),
+      addOnPart: addOns.length
+        ? this.messages.get('order.lineAddOnPart', {
+            addOns: addOns.join(this.messages.get('order.lineAddOnSeparator')),
+          })
+        : '',
+      lineTotal: item.totalPrice,
+    });
+  }
+
+  /** The delivery address block shared by the order and COD confirmations. */
+  private orderAddressBlock(deliveryDetails: any): string {
+    if (!deliveryDetails) return this.messages.get('order.addressMissing');
+    return this.messages.get('order.addressBlock', {
+      name: deliveryDetails.name,
+      address: deliveryDetails.address,
+      pinCode: deliveryDetails.pinCode,
+      phone: deliveryDetails.phone,
+    });
+  }
+
   async sendOrderConfirmationMessage(phone: string, order: any) {
     if (!order) return;
 
     const itemLines = order.orderItems
-      .map((item: any) => {
-        const addOns: string[] = [];
-        if (item.cleaning) addOns.push(`Cleaning +₹${item.cleaningCharge ?? 0}`);
-        if (item.cutting) {
-          const label = item.cuttingOption
-            ? `Cut ${item.cuttingOption}`
-            : 'Cutting';
-          addOns.push(`${label} +₹${item.cuttingCharge ?? 0}`);
-        }
-        const addOnText = addOns.length ? ` (${addOns.join(', ')})` : '';
-        const unitLabel = item.variant ? this.formatWeight(item.variant) : '';
-        const qtyText = unitLabel
-          ? `${item.quantity} × ${unitLabel}`
-          : `${item.quantity}`;
-        return `• ${item.product?.name ?? 'Product'} - ${qtyText}${addOnText} - ₹${item.totalPrice}`;
-      })
+      .map((item: any) => this.orderItemLine(item))
       .join('\n');
 
-    const d = order.deliveryDetails;
-    const addressLines = d
-      ? `${d.name}\n${d.address}, ${d.pinCode}\nPhone: ${d.phone}`
-      : 'Address not available';
-
-    const body =
-      `✅ *Order Placed Successfully!*\n\n` +
-      `📦 *Your Order:*\n${itemLines}\n\n` +
-      `*Total Amount: ₹${order.totalAmount}*\n\n` +
-      `📍 *Delivery Address:*\n${addressLines}\n\n` +
-      `_Further order updates will be notified to you on WhatsApp._`;
+    const body = this.messages.get('order.placed', {
+      lines: itemLines,
+      totalAmount: order.totalAmount,
+      address: this.orderAddressBlock(order.deliveryDetails),
+    });
 
     const payload = {
       messaging_product: 'whatsapp',
@@ -1554,30 +1687,32 @@ export class WhatsappService {
     let headline: string;
     // For a dispatched order, include the assigned delivery agent's contact so
     // the customer knows who is bringing their order.
-    let agentLine = '';
+    let agentBlock = '';
     if (order.status === 'CONFIRMED') {
-      headline = '✅ *Your order has been confirmed!*';
+      headline = this.messages.get('order.statusConfirmedHeadline');
     } else if (order.status === 'DISPATCHED') {
-      headline = '🚚 *Your order is out for delivery!*';
+      headline = this.messages.get('order.statusDispatchedHeadline');
       if (order.deliveryAgent?.name) {
-        agentLine =
-          `\n*Delivery partner:* ${order.deliveryAgent.name}` +
-          (order.deliveryAgent.phone
-            ? `\n*Contact:* ${order.deliveryAgent.phone}`
-            : '') +
-          `\n`;
+        agentBlock = this.messages.get('order.agentBlock', {
+          agentName: order.deliveryAgent.name,
+          agentContact: order.deliveryAgent.phone
+            ? this.messages.get('order.agentContact', {
+                agentPhone: order.deliveryAgent.phone,
+              })
+            : '',
+        });
       }
     } else {
       // Not a customer-facing milestone; nothing to send.
       return;
     }
 
-    const body =
-      `${headline}\n\n` +
-      `Order *#${shortId}*\n` +
-      `*Total Amount: ₹${order.totalAmount}*\n` +
-      agentLine +
-      `\n_Further order updates will be notified to you on WhatsApp._`;
+    const body = this.messages.get('order.statusUpdate', {
+      headline,
+      orderNumber: shortId,
+      totalAmount: order.totalAmount,
+      agentBlock,
+    });
 
     const payload = {
       messaging_product: 'whatsapp',
@@ -1602,21 +1737,26 @@ export class WhatsappService {
       interactive: {
         type: 'button',
         body: {
-          text:
-            `Your order is ready!\n\n` +
-            `*Total: ₹${Number(amount).toFixed(2)}*\n\n` +
-            `Choose your payment method:`,
+          text: this.messages.get('payment.prompt', {
+            amount: Number(amount).toFixed(2),
+          }),
         },
-        footer: { text: 'Fresh to home™' },
+        footer: { text: this.messages.get('common.footer') },
         action: {
           buttons: [
             {
               type: 'reply',
-              reply: { id: `selectPaymentCOD-${orderId}`, title: 'Cash on Delivery' },
+              reply: {
+                id: `selectPaymentCOD-${orderId}`,
+                title: this.messages.get('payment.buttonCod'),
+              },
             },
             {
               type: 'reply',
-              reply: { id: `selectPaymentUPI-${orderId}`, title: 'UPI Payment' },
+              reply: {
+                id: `selectPaymentUPI-${orderId}`,
+                title: this.messages.get('payment.buttonUpi'),
+              },
             },
           ],
         },
@@ -1646,17 +1786,10 @@ export class WhatsappService {
   }
 
   private async sendCodConfirmationMessage(phone: string, order: any) {
-    const d = order.deliveryDetails;
-    const addressLines = d
-      ? `${d.name}\n${d.address}, ${d.pinCode}\nPhone: ${d.phone}`
-      : 'Address not available';
-
-    const body =
-      `✅ *Order Confirmed!*\n\n` +
-      `Payment Method: *Cash on Delivery*\n` +
-      `Please pay *₹${Number(order.totalAmount).toFixed(2)}* in cash when your order arrives.\n\n` +
-      `📍 *Delivery Address:*\n${addressLines}\n\n` +
-      `_Further order updates will be notified to you on WhatsApp._`;
+    const body = this.messages.get('payment.codConfirmed', {
+      amount: Number(order.totalAmount).toFixed(2),
+      address: this.orderAddressBlock(order.deliveryDetails),
+    });
 
     await this.waInstance.post('/messages', {
       messaging_product: 'whatsapp',
@@ -1697,12 +1830,11 @@ export class WhatsappService {
    * untouched; this just explains why the tap did nothing.
    */
   private async sendOrderLockedMessage(phone: string, order: any) {
-    const body =
+    const body = this.messages.get(
       order?.status === OrderStatus.CANCELLED
-        ? `This order is no longer active and can't be changed.\n\n` +
-          `Please place a new order to continue.`
-        : `✅ Your order is already confirmed and can't be changed.\n\n` +
-          `If you need any help, please contact support.`;
+        ? 'payment.lockedCancelled'
+        : 'payment.lockedConfirmed',
+    );
 
     await this.waInstance.post('/messages', {
       messaging_product: 'whatsapp',
@@ -1729,9 +1861,9 @@ export class WhatsappService {
       type: 'image',
       image: {
         link: qrUrl,
-        caption:
-          `Scan this QR to pay *₹${Number(amount).toFixed(2)}*.\n\n` +
-          `After paying, *reply with the payment screenshot* in this chat to confirm your order.`,
+        caption: this.messages.get('payment.upiQrCaption', {
+          amount: Number(amount).toFixed(2),
+        }),
       },
     };
 
@@ -1766,7 +1898,7 @@ export class WhatsappService {
         phone,
         url,
         filename,
-        `🧾 Your D-Fresh bill for order ${orderNo}.`,
+        this.messages.get('order.billCaption', { orderNumber: orderNo }),
       );
       await this.orderService.markBillSent(orderId);
     } catch (error) {
@@ -1801,11 +1933,7 @@ export class WhatsappService {
           messaging_product: 'whatsapp',
           to: phone,
           type: 'text',
-          text: {
-            body:
-              `We couldn't find a pending UPI payment for your number.\n` +
-              `If you've just paid, please place your order again or contact support.`,
-          },
+          text: { body: this.messages.get('payment.screenshotNoOrder') },
         });
         return;
       }
@@ -1823,11 +1951,7 @@ export class WhatsappService {
         messaging_product: 'whatsapp',
         to: phone,
         type: 'text',
-        text: {
-          body:
-            `✅ Thanks! Your payment screenshot has been received.\n\n` +
-            `We'll verify the payment and confirm your order shortly.`,
-        },
+        text: { body: this.messages.get('payment.screenshotReceived') },
       });
     } catch (error) {
       console.error('Error handling payment screenshot:', error);
