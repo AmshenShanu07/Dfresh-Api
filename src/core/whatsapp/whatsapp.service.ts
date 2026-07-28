@@ -25,6 +25,7 @@ import {
   computeCurrentWindowStart,
   computeNextWindowStart,
 } from '../share-catlaog/share-catlaog.window';
+import { categoryIdOf, groupEntriesByCategory } from './catalog-grouping';
 
 @Injectable()
 export class WhatsappService {
@@ -288,7 +289,7 @@ export class WhatsappService {
         "Hey! Our fresh catalog is live now 🥬\nTap below to browse and place your order.",
       );
 
-      return this.sendProductList(phone);
+      return this.sendCategoryList(phone);
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
     }
@@ -304,10 +305,17 @@ export class WhatsappService {
     const [action, ...parts] = replyId.split('~');
 
     switch (action) {
+      case 'pickCat':
+        return this.sendProductList(phone, parts[0]);
+      case 'catPage':
+        return this.sendCategoryList(phone, parseInt(parts[0], 10) || 0);
+      case 'catList':
+        return this.sendCategoryList(phone);
       case 'pickWeight':
         return this.sendWeightList(phone, parts[0]);
       case 'prodPage':
-        return this.sendProductList(phone, parseInt(parts[0], 10) || 0);
+        // parts: [categoryId, page]
+        return this.sendProductList(phone, parts[0], parseInt(parts[1], 10) || 0);
       case 'pickVariant':
         return this.askCleaning(phone, parts[0]);
       case 'clean':
@@ -329,7 +337,7 @@ export class WhatsappService {
       case 'cartView':
         return this.sendCartSummary(phone);
       case 'cartAddMore':
-        return this.sendProductList(phone);
+        return this.sendCategoryList(phone);
       case 'cartRemove':
         return this.sendCartRemoveList(phone);
       case 'cartDel':
@@ -347,7 +355,7 @@ export class WhatsappService {
 
     // Legacy hyphen-prefixed actions (catalog entry / address / payment)
     if (replyId === 'get-catlog') {
-      return this.sendProductList(phone);
+      return this.sendCategoryList(phone);
     } else if (replyId.startsWith('confirmAddress-')) {
       return this.handleConfirmAddress(phone, replyId.replace('confirmAddress-', ''));
     } else if (replyId.startsWith('addAddress-')) {
@@ -368,7 +376,7 @@ export class WhatsappService {
       },
       relations: {
         ShareCatalogProducts: {
-          product: true,
+          product: { category: true },
           variant: { cuttingStyles: { cuttingStyle: true } },
         },
         ShareCatalogProductStock: true,
@@ -449,16 +457,103 @@ export class WhatsappService {
     return entry;
   }
 
-  async sendProductList(phone: string, page = 0) {
-    const catalog = await this.getOpenCatalog();
-    if (!catalog) return this.sendUnavailableMessage(phone);
-
-    const entries = (catalog.ShareCatalogProducts ?? []).filter(
+  /** Sellable entries of the open catalog — the shared basis of both lists. */
+  private sellableEntries(catalog: any): any[] {
+    return (catalog.ShareCatalogProducts ?? []).filter(
       (e: any) =>
         e.variantId &&
         e.variant &&
         e.product &&
         this.isEntrySellable(catalog, e),
+    );
+  }
+
+  /**
+   * First step of product browsing: the categories present in the open catalog
+   * that still have stock. Picking one leads to `sendProductList`.
+   *
+   * `allowAutoSkip` jumps straight to the products when only one category has
+   * stock (no point making the customer tap a one-row list). It is passed as
+   * false when we arrive here *from* `sendProductList` after a category sold
+   * out, which is what stops the two screens ping-ponging.
+   */
+  async sendCategoryList(phone: string, page = 0, allowAutoSkip = true) {
+    const catalog = await this.getOpenCatalog();
+    if (!catalog) return this.sendUnavailableMessage(phone);
+
+    const categories = groupEntriesByCategory(this.sellableEntries(catalog));
+
+    if (categories.length === 0) {
+      return this.sendOutOfStockMessage(phone);
+    }
+
+    if (categories.length === 1 && allowAutoSkip) {
+      // Single category — skip the step, and drop the back row it would offer.
+      return this.sendProductList(phone, categories[0].id, 0, false);
+    }
+
+    const LIST_MAX = 10;
+    const PAGE_SIZE = 9;
+    let pageCategories: typeof categories;
+    let moreRow = false;
+
+    if (categories.length <= LIST_MAX) {
+      pageCategories = categories;
+    } else {
+      const start = page * PAGE_SIZE;
+      pageCategories = categories.slice(start, start + PAGE_SIZE);
+      if (pageCategories.length === 0) {
+        return this.sendCategoryList(phone, 0, false); // out-of-range page, restart
+      }
+      moreRow = start + PAGE_SIZE < categories.length;
+    }
+
+    const rows: any[] = pageCategories.map((c) => ({
+      id: `pickCat~${c.id}`,
+      title: this.truncate(c.name, 24),
+      description: `${c.productCount} item${c.productCount === 1 ? '' : 's'} available`,
+    }));
+    if (moreRow) {
+      rows.push({ id: `catPage~${page + 1}`, title: 'More categories' });
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        header: { type: 'text', text: 'Shop by Category' },
+        body: { text: "Tap a category to see what's fresh right now." },
+        footer: { text: 'Fresh to home™' },
+        action: {
+          button: 'View Categories',
+          sections: [{ title: 'Categories', rows }],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Category list sent:', response.data);
+  }
+
+  /**
+   * Second step of product browsing: the in-stock products of one category.
+   * `showBack` is false only when we auto-skipped the category step, since a
+   * back row would lead to a pointless one-row list.
+   */
+  async sendProductList(
+    phone: string,
+    categoryId: string,
+    page = 0,
+    showBack = true,
+  ) {
+    const catalog = await this.getOpenCatalog();
+    if (!catalog) return this.sendUnavailableMessage(phone);
+
+    const entries = this.sellableEntries(catalog).filter(
+      (e: any) => categoryIdOf(e) === categoryId,
     );
 
     // Group by product, preserving first-seen order, and track the lowest
@@ -508,11 +603,20 @@ export class WhatsappService {
     const products = order.map((id) => byProduct.get(id)!);
 
     if (products.length === 0) {
-      return this.sendOutOfStockMessage(phone);
+      // The category emptied out between the customer seeing it and tapping it
+      // (or the reply carried a stale category id). Say so, then re-offer the
+      // refreshed list — without auto-skipping, so we can't bounce back here.
+      await this.sendText(phone, 'Sorry, that category just sold out.');
+      return this.sendCategoryList(phone, 0, false);
     }
 
-    const LIST_MAX = 10;
-    const PAGE_SIZE = 9;
+    const categoryName =
+      entries[0].product?.category?.name ?? 'Products';
+
+    // WhatsApp caps a list at 10 rows, and the back row costs one of them.
+    const backRows = showBack ? 1 : 0;
+    const LIST_MAX = 10 - backRows;
+    const PAGE_SIZE = LIST_MAX - 1; // one slot reserved for "More products"
     let pageProducts: ProductRow[];
     let moreRow = false;
 
@@ -522,7 +626,8 @@ export class WhatsappService {
       const start = page * PAGE_SIZE;
       pageProducts = products.slice(start, start + PAGE_SIZE);
       if (pageProducts.length === 0) {
-        return this.sendProductList(phone, 0); // out-of-range page, restart
+        // out-of-range page, restart
+        return this.sendProductList(phone, categoryId, 0, showBack);
       }
       moreRow = start + PAGE_SIZE < products.length;
     }
@@ -533,7 +638,13 @@ export class WhatsappService {
       description: this.buildProductSubtitle(p),
     }));
     if (moreRow) {
-      rows.push({ id: `prodPage~${page + 1}`, title: 'More products' });
+      rows.push({
+        id: `prodPage~${categoryId}~${page + 1}`,
+        title: 'More products',
+      });
+    }
+    if (showBack) {
+      rows.push({ id: 'catList', title: '⬅️ Back to categories' });
     }
 
     const payload = {
@@ -550,7 +661,7 @@ export class WhatsappService {
         footer: { text: 'Daily Fresh™' },
         action: {
           button: 'View Products',
-          sections: [{ title: 'Products', rows }],
+          sections: [{ title: this.truncate(categoryName, 24), rows }],
         },
       },
     };
@@ -573,7 +684,7 @@ export class WhatsappService {
 
     if (entries.length === 0) {
       await this.sendText(phone, 'Sorry, that product is no longer available.');
-      return this.sendProductList(phone);
+      return this.sendCategoryList(phone);
     }
 
     const productName = entries[0].product?.name ?? 'Product';
@@ -614,7 +725,7 @@ export class WhatsappService {
     const entry = await this.findCatalogEntry(variantId);
     if (!entry) {
       await this.sendText(phone, 'Sorry, that item is no longer available.');
-      return this.sendProductList(phone);
+      return this.sendCategoryList(phone);
     }
 
     // Cleaning is a product-level capability; every variant carries a charge.
@@ -637,7 +748,7 @@ export class WhatsappService {
     const entry = await this.findCatalogEntry(variantId);
     if (!entry) {
       await this.sendText(phone, 'Sorry, that item is no longer available.');
-      return this.sendProductList(phone);
+      return this.sendCategoryList(phone);
     }
 
     // Cutting is a product-level capability offered by all its variants.
@@ -657,7 +768,7 @@ export class WhatsappService {
     const entry = await this.findCatalogEntry(variantId);
     if (!entry) {
       await this.sendText(phone, 'Sorry, that item is no longer available.');
-      return this.sendProductList(phone);
+      return this.sendCategoryList(phone);
     }
 
     // Only surface styles whose master record is still active.
@@ -710,7 +821,7 @@ export class WhatsappService {
     const entry = await this.findCatalogEntry(variantId);
     if (!entry) {
       await this.sendText(phone, 'Sorry, that item is no longer available.');
-      return this.sendProductList(phone);
+      return this.sendCategoryList(phone);
     }
 
     const productName = entry.product?.name ?? 'Product';
@@ -781,7 +892,7 @@ export class WhatsappService {
     const entry = await this.findCatalogEntry(variantId);
     if (!entry) {
       await this.sendText(phone, 'Sorry, that item is no longer available.');
-      return this.sendProductList(phone);
+      return this.sendCategoryList(phone);
     }
 
     // The reply payload carries the cutting-style id; resolve its display name
@@ -843,7 +954,7 @@ export class WhatsappService {
 
     if (items.length === 0) {
       await this.sendText(phone, 'Your cart is empty. Here are the products again.');
-      return this.sendProductList(phone);
+      return this.sendCategoryList(phone);
     }
 
     const lines = items.map(
@@ -933,7 +1044,7 @@ export class WhatsappService {
 
     if (items.length === 0) {
       await this.sendText(phone, 'Your cart is empty. Here are the products again.');
-      return this.sendProductList(phone);
+      return this.sendCategoryList(phone);
     }
 
     // Map cart lines into the products[] shape orderService.createOrder consumes.
@@ -973,7 +1084,7 @@ export class WhatsappService {
 
   private async handleCancelItem(phone: string) {
     await this.sendText(phone, 'No problem — here are the products again.');
-    return this.sendProductList(phone);
+    return this.sendCategoryList(phone);
   }
 
   private async sendOffHoursMessage(phone: string) {
