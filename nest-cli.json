@@ -6,6 +6,8 @@
     "spec": false
   },
   "compilerOptions": {
-    "deleteOutDir": true
+    "deleteOutDir": true,
+    "assets": ["assets/fonts/*.ttf"],
+    "watchAssets": true
   }
 }

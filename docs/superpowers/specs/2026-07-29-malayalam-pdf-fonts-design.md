@@ -53,7 +53,7 @@ substantive positioning feature is `kern`, which is unaffected.
 
 ### Font
 
-Noto Sans Malayalam, **static** `Regular` + `Bold` instances (OFL-1.1, ~326KB each),
+Noto Sans Malayalam, **static** `Regular` + `Bold` instances (OFL-1.1, ~150KB each),
 vendored at `backend/src/assets/fonts/`. Source: the `notofonts/malayalam` v2.104
 release archive.
 
