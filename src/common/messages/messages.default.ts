@@ -30,10 +30,10 @@ export const MESSAGE_DEFAULTS: MessageTree = {
   },
 
   onboarding: {
-    namePrompt: 'Hi! Welcome to D-Fresh. Please reply with your name to get started.',
+    namePrompt: 'Hi! Welcome to Daily Fresh. Please reply with your name to get started.',
     nameReprompt: 'Please share your name first to continue. Reply with your name.',
     welcome:
-      'Hey {{name}}!\nWelcome to Dfresh! \nPlease checkout our catlog for the best deals!',
+      'Hey {{name}}!\nWelcome to Daily Fresh! \nPlease checkout our catlog for the best deals!',
     mainMenu: 'Hi {{name}}! What would you like to do?',
     buttonViewProducts: 'View Products',
     buttonViewCart: 'View Cart',
@@ -223,7 +223,7 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     statusDispatchedHeadline: '🚚 *Your order is out for delivery!*',
     agentBlock: '\n*Delivery partner:* {{agentName}}{{agentContact}}\n',
     agentContact: '\n*Contact:* {{agentPhone}}',
-    billCaption: '🧾 Your D-Fresh bill for order {{orderNumber}}.',
+    billCaption: '🧾 Your Daily Fresh bill for order {{orderNumber}}.',
   },
 
   availability: {

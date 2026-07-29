@@ -22,7 +22,7 @@ const FONTS = ['NotoML', 'NotoML-Bold'];
 
 @Injectable()
 export class InvoiceService {
-  private readonly storeName = 'D-FRESH';
+  private readonly storeName = 'DAILY FRESH';
   private readonly tagline = 'Fresh Produce Delivery';
   private readonly contactPhone = '+91 98765 43210';
   private readonly address = 'Kochi, Kerala, India';
@@ -143,7 +143,7 @@ export class InvoiceService {
 
       doc.moveDown(3);
       doc.font('NotoML').fontSize(9).fillColor('#666')
-        .text('Thank you for shopping with D-Fresh!', left, doc.y, { align: 'center', width: pageWidth });
+        .text('Thank you for shopping with Daily Fresh!', left, doc.y, { align: 'center', width: pageWidth });
       doc.fillColor('black');
     });
   }

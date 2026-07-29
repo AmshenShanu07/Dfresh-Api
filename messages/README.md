@@ -1,6 +1,6 @@
 # Editing the WhatsApp messages
 
-Every message the D-Fresh bot sends to a customer lives in **`messages.json`**, next to this file.
+Every message the Daily Fresh bot sends to a customer lives in **`messages.json`**, next to this file.
 Change the text there and the bot uses it immediately — no rebuild, no restart, no deploy.
 
 The text can be in any language. Write the whole file in Malayalam if you want; only the **keys**
@@ -17,7 +17,7 @@ The text can be in any language. Write the whole file in Malayalam if you want; 
 
 ```jsonc
 "onboarding": {
-  "welcome": "Hey {{name}}!\nWelcome to Dfresh!"
+  "welcome": "Hey {{name}}!\nWelcome to Daily Fresh!"
 //  ↑ key — don't change   ↑ text — change this
 }
 ```
@@ -36,7 +36,7 @@ The text can be in any language. Write the whole file in Malayalam if you want; 
 **Use `\n` for a new line.** A real line break inside the quotes is invalid JSON.
 
 ```json
-"welcome": "Hello!\nWelcome to D-Fresh."
+"welcome": "Hello!\nWelcome to Daily Fresh."
 ```
 
 **Escape double quotes** inside the text as `\"`, or just use single quotes:

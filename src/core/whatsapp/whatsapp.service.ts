@@ -1846,7 +1846,7 @@ export class WhatsappService {
 
   private async generateUpiQrBuffer(orderId: string, amount: number): Promise<Buffer> {
     const vpa = this.configService.get<string>('MERCHANT_UPI_VPA');
-    const name = this.configService.get<string>('MERCHANT_DISPLAY_NAME') || 'D-Fresh';
+    const name = this.configService.get<string>('MERCHANT_DISPLAY_NAME') || 'Daily Fresh';
     const tn = `order-${orderId.slice(0, 8)}`;
     const upiUri =
       `upi://pay?pa=${vpa}&pn=${encodeURIComponent(name)}` +

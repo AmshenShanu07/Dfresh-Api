@@ -12,8 +12,8 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   const options = new DocumentBuilder()
-    .setTitle('DFresh Api')
-    .setDescription('DFresh Api Documentation')
+    .setTitle('Daily Fresh Api')
+    .setDescription('Daily Fresh Api Documentation')
     .setVersion('1.0')
     .addBearerAuth();
 
