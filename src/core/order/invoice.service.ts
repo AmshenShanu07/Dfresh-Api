@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { format } from 'date-fns';
+import { join } from 'path';
 import * as PDFDocument from 'pdfkit';
 import { MeasurementType } from 'src/common/enums';
 import { formatAmount } from 'src/common/utils/units';
@@ -15,12 +16,30 @@ import { deriveOrderNumber } from './order-number.util';
  * Amounts are rendered as "Rs." rather than the ₹ glyph: pdfkit's built-in
  * Helvetica font has no rupee glyph, so ₹ would print as a blank box.
  */
+/**
+ * fontkit@2.0.4 (latest published; no upgrade available) dereferences a null anchor
+ * while applying the `abvm` above-base-mark feature to Malayalam conjuncts, throwing
+ * "Cannot read properties of null (reading 'xCoordinate')". Disabling only `abvm`
+ * avoids it with no visual change — verified glyph-for-glyph against a HarfBuzz
+ * rendering. Disabling blwm/mark/mkmk/dist/kern does not help.
+ */
+const ABVM_OFF = { abvm: false } as const;
+
 @Injectable()
 export class InvoiceService {
   private readonly storeName = 'D-FRESH';
   private readonly tagline = 'Fresh Produce Delivery';
   private readonly contactPhone = '+91 98765 43210';
   private readonly address = 'Kochi, Kerala, India';
+
+  // Resolved from __dirname so the same relative path works under ts-jest
+  // (src/assets/fonts) and a built process (dist/assets/fonts). nest-cli copies
+  // these via the "assets" glob in nest-cli.json.
+  private readonly fontDir = join(__dirname, '../../assets/fonts');
+  private readonly fonts = {
+    regular: join(this.fontDir, 'NotoSansMalayalam-Regular.ttf'),
+    bold: join(this.fontDir, 'NotoSansMalayalam-Bold.ttf'),
+  };
 
   /** A4 customer bill covering the whole order. */
   async generateBill(order: any): Promise<Buffer> {
@@ -31,9 +50,9 @@ export class InvoiceService {
       const left = doc.page.margins.left;
 
       // ---- Header ----
-      doc.font('Helvetica-Bold').fontSize(22).text(this.storeName, { align: 'center' });
+      doc.font('NotoML-Bold').fontSize(22).text(this.storeName, { align: 'center' });
       doc
-        .font('Helvetica')
+        .font('NotoML')
         .fontSize(10)
         .text(`${this.tagline} • ${this.address}`, { align: 'center' })
         .text(`Mob: ${this.contactPhone}`, { align: 'center' });
@@ -47,16 +66,16 @@ export class InvoiceService {
       const customerPhone = d?.phone || order.user?.phone || '';
       const metaTop = doc.y;
 
-      doc.font('Helvetica-Bold').fontSize(10).text('Bill To:', left, metaTop);
+      doc.font('NotoML-Bold').fontSize(10).text('Bill To:', left, metaTop);
       doc
-        .font('Helvetica')
+        .font('NotoML')
         .fontSize(10)
         .text(customerName)
         .text(d?.address ? `${d.address}${d.pinCode ? ', ' + d.pinCode : ''}` : '')
         .text(customerPhone ? `Phone: ${customerPhone}` : '');
 
       const rightX = left + pageWidth / 2;
-      doc.font('Helvetica').fontSize(10);
+      doc.font('NotoML').fontSize(10);
       doc.text(`Order No: ${orderNo}`, rightX, metaTop, { align: 'right', width: pageWidth / 2 });
       doc.text(`Date: ${format(new Date(order.createdAt), 'dd-MM-yyyy HH:mm')}`, rightX, doc.y, { align: 'right', width: pageWidth / 2 });
       doc.text(`Payment: ${order.paymentMethod || 'N/A'}`, rightX, doc.y, { align: 'right', width: pageWidth / 2 });
@@ -77,7 +96,7 @@ export class InvoiceService {
 
       this.hr(doc, left, pageWidth, y);
       y += 6;
-      doc.font('Helvetica-Bold').fontSize(9);
+      doc.font('NotoML-Bold').fontSize(9);
       doc.text('Item', cols.item, y, { width: cols.qty - cols.item - 4 });
       doc.text('Qty', cols.qty, y, { width: cols.unit - cols.qty - 4 });
       doc.text('Unit', cols.unit, y, { width: cols.addon - cols.unit - 4 });
@@ -87,7 +106,7 @@ export class InvoiceService {
       this.hr(doc, left, pageWidth, y);
       y += 6;
 
-      doc.font('Helvetica').fontSize(9);
+      doc.font('NotoML').fontSize(9);
       for (const item of order.orderItems || []) {
         const nameCellW = cols.qty - cols.item - 4;
         const name = item.product?.name || 'Item';
@@ -95,14 +114,14 @@ export class InvoiceService {
         const addons = this.addonsText(item) || '—';
 
         const startY = y;
-        doc.font('Helvetica-Bold').fontSize(9).text(name, cols.item, y, { width: nameCellW });
+        doc.font('NotoML-Bold').fontSize(9).text(name, cols.item, y, { width: nameCellW });
         if (weightLine) {
-          doc.font('Helvetica').fontSize(8).fillColor('#555').text(weightLine, cols.item, doc.y, { width: nameCellW });
+          doc.font('NotoML').fontSize(8).fillColor('#555').text(weightLine, cols.item, doc.y, { width: nameCellW });
           doc.fillColor('black');
         }
         const nameEndY = doc.y;
 
-        doc.font('Helvetica').fontSize(9);
+        doc.font('NotoML').fontSize(9);
         doc.text(this.formatQty(item), cols.qty, startY, { width: cols.unit - cols.qty - 4 });
         doc.text(this.money(item.price), cols.unit, startY, { width: cols.addon - cols.unit - 4 });
         doc.fontSize(9).text(this.money(item.totalPrice), cols.amount, startY, { width: amountWidth, align: 'right' });
@@ -123,12 +142,12 @@ export class InvoiceService {
       y += 10;
 
       // ---- Total ----
-      doc.font('Helvetica-Bold').fontSize(12);
+      doc.font('NotoML-Bold').fontSize(12);
       doc.text('Grand Total', cols.item, y, { width: cols.amount - cols.item - 4 });
       doc.text(this.money(order.totalAmount), cols.amount, y, { width: amountWidth, align: 'right' });
 
       doc.moveDown(3);
-      doc.font('Helvetica').fontSize(9).fillColor('#666')
+      doc.font('NotoML').fontSize(9).fillColor('#666')
         .text('Thank you for shopping with D-Fresh!', left, doc.y, { align: 'center', width: pageWidth });
       doc.fillColor('black');
     });
@@ -145,14 +164,14 @@ export class InvoiceService {
         doc.page.width - doc.page.margins.left - doc.page.margins.right;
       const left = doc.page.margins.left;
 
-      doc.font('Helvetica-Bold').fontSize(16).text(this.storeName, { align: 'center' });
+      doc.font('NotoML-Bold').fontSize(16).text(this.storeName, { align: 'center' });
       doc.moveDown(0.3);
       this.hr(doc, left, contentW);
       doc.moveDown(0.5);
 
       const field = (label: string, value: string) => {
-        doc.font('Helvetica-Bold').fontSize(9).text(`${label}: `, { continued: true });
-        doc.font('Helvetica').fontSize(9).text(value || '—');
+        doc.font('NotoML-Bold').fontSize(9).text(`${label}: `, { continued: true });
+        doc.font('NotoML').fontSize(9).text(value || '—');
       };
 
       field('ITEM', item.product?.name || 'Item');
@@ -187,6 +206,9 @@ export class InvoiceService {
     return new Promise((resolve, reject) => {
       try {
         const doc = new PDFDocument(options);
+        doc.registerFont('NotoML', this.fonts.regular);
+        doc.registerFont('NotoML-Bold', this.fonts.bold);
+        this.harden(doc);
         const chunks: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => chunks.push(chunk));
         doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -197,6 +219,21 @@ export class InvoiceService {
         reject(err);
       }
     });
+  }
+
+  /**
+   * Forces ABVM_OFF onto every text call. A single un-hardened call site would be a
+   * production crash, so this wraps the document once rather than trusting 28 call
+   * sites. Spread order lets an explicit caller-supplied `features` win.
+   */
+  private harden(doc: PDFKit.PDFDocument): PDFKit.PDFDocument {
+    const orig = doc.text.bind(doc);
+    (doc as any).text = (text: any, x?: any, y?: any, options?: any) => {
+      if (x && typeof x === 'object') return orig(text, { features: ABVM_OFF, ...x });
+      if (y && typeof y === 'object') return orig(text, x, { features: ABVM_OFF, ...y });
+      return orig(text, x, y, { features: ABVM_OFF, ...(options || {}) });
+    };
+    return doc;
   }
 
   private hr(doc: PDFKit.PDFDocument, x: number, width: number, y?: number) {
