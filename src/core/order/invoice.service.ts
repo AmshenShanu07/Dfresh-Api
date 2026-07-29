@@ -13,8 +13,8 @@ import { deriveOrderNumber } from './order-number.util';
  * Pure: no DB access, no injected repositories, so it has no circular
  * dependency on OrderService and can be provided to any module that needs it.
  *
- * Amounts are rendered as "Rs." rather than the ₹ glyph: pdfkit's built-in
- * Helvetica font has no rupee glyph, so ₹ would print as a blank box.
+ * All text is set in Noto Sans Malayalam (see ABVM_OFF below) because product names
+ * may contain Malayalam. It also covers Latin and ₹, so amounts print the real glyph.
  */
 /**
  * fontkit@2.0.4 (latest published; no upgrade available) dereferences a null anchor
@@ -248,7 +248,7 @@ export class InvoiceService {
   }
 
   private money(n: number): string {
-    return `Rs. ${(Number(n) || 0).toFixed(2)}`;
+    return `₹ ${(Number(n) || 0).toFixed(2)}`;
   }
 
   private measurementType(item: any): MeasurementType {

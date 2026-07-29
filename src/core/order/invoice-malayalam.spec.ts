@@ -64,4 +64,10 @@ describe('InvoiceService — Malayalam', () => {
     expect(buf.subarray(0, 4).toString()).toBe('%PDF');
     expect(buf.toString('latin1')).toContain('NotoSansMalayalam');
   });
+
+  it('prints amounts with the rupee sign', async () => {
+    const buf = await service.generateBill(order('തക്കാളി'));
+    expect(buf.subarray(0, 4).toString()).toBe('%PDF');
+    expect((service as any).money(250)).toBe('₹ 250.00');
+  });
 });
