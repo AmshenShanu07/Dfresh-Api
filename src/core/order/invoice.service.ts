@@ -5,6 +5,7 @@ import * as PDFDocument from 'pdfkit';
 import { MeasurementType } from 'src/common/enums';
 import { formatAmount } from 'src/common/utils/units';
 import { deriveOrderNumber } from './order-number.util';
+import { applyMalayalamShaping } from './malayalam-shaping';
 
 /**
  * Builds printable PDFs from a fully-hydrated order (as returned by
@@ -13,17 +14,11 @@ import { deriveOrderNumber } from './order-number.util';
  * Pure: no DB access, no injected repositories, so it has no circular
  * dependency on OrderService and can be provided to any module that needs it.
  *
- * All text is set in Noto Sans Malayalam (see ABVM_OFF below) because product names
- * may contain Malayalam. It also covers Latin and ₹, so amounts print the real glyph.
+ * All text is set in Noto Sans Malayalam because product names may contain
+ * Malayalam. It also covers Latin and ₹, so amounts print the real glyph.
+ * See malayalam-shaping.ts for the pdfkit/fontkit workarounds every document needs.
  */
-/**
- * fontkit@2.0.4 (latest published; no upgrade available) dereferences a null anchor
- * while applying the `abvm` above-base-mark feature to Malayalam conjuncts, throwing
- * "Cannot read properties of null (reading 'xCoordinate')". Disabling only `abvm`
- * avoids it with no visual change — verified glyph-for-glyph against a HarfBuzz
- * rendering. Disabling blwm/mark/mkmk/dist/kern does not help.
- */
-const ABVM_OFF = { abvm: false } as const;
+const FONTS = ['NotoML', 'NotoML-Bold'];
 
 @Injectable()
 export class InvoiceService {
@@ -208,7 +203,7 @@ export class InvoiceService {
         const doc = new PDFDocument(options);
         doc.registerFont('NotoML', this.fonts.regular);
         doc.registerFont('NotoML-Bold', this.fonts.bold);
-        this.harden(doc);
+        applyMalayalamShaping(doc, FONTS);
         const chunks: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => chunks.push(chunk));
         doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -219,21 +214,6 @@ export class InvoiceService {
         reject(err);
       }
     });
-  }
-
-  /**
-   * Forces ABVM_OFF onto every text call. A single un-hardened call site would be a
-   * production crash, so this wraps the document once rather than trusting 28 call
-   * sites. Spread order lets an explicit caller-supplied `features` win.
-   */
-  private harden(doc: PDFKit.PDFDocument): PDFKit.PDFDocument {
-    const orig = doc.text.bind(doc);
-    (doc as any).text = (text: any, x?: any, y?: any, options?: any) => {
-      if (x && typeof x === 'object') return orig(text, { features: ABVM_OFF, ...x });
-      if (y && typeof y === 'object') return orig(text, x, { features: ABVM_OFF, ...y });
-      return orig(text, x, y, { features: ABVM_OFF, ...(options || {}) });
-    };
-    return doc;
   }
 
   private hr(doc: PDFKit.PDFDocument, x: number, width: number, y?: number) {

@@ -14,6 +14,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { LoginDto } from './dto/login.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
+import { UpdateStaffDto } from './dto/update-staff.dto';
 import { UserTypeDto } from './dto/user-type.dto';
 
 @ApiTags('Manage Users')
@@ -55,6 +56,11 @@ export class UsersController {
   @Put('update/:id')
   update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
     return this.usersService.update(id, updateUserDto);
+  }
+
+  @Put('update-staff/:id')
+  updateStaff(@Param('id') id: string, @Body() updateStaffDto: UpdateStaffDto) {
+    return this.usersService.updateStaff(id, updateStaffDto);
   }
 
   @Delete('delete/:id')
