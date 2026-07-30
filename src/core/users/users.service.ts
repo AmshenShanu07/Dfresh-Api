@@ -18,13 +18,7 @@ import { User } from './entities/user.entity';
 import { Staff } from './entities/staff.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
 import { UserTypes } from 'src/common/enums';
-
-// Roles that operate out of a specific outlet, so they carry a Staff join row.
-// Mirrors OUTLET_REQUIRED_ROLES in the dashboard's staff form.
-const OUTLET_ROLES: UserTypes[] = [
-  UserTypes.OUTLET_AGENT,
-  UserTypes.DELIVERY_AGENT,
-];
+import { AreaService, AreaInput } from '../area/area.service';
 
 @Injectable()
 export class UsersService {
@@ -36,6 +30,7 @@ export class UsersService {
     @InjectRepository(Outlets)
     private outletRepository: Repository<Outlets>,
     private jwtService: JwtService,
+    private areaService: AreaService,
   ) {}
 
   async create(createUserDto: CreateUserDto) {
@@ -106,8 +101,14 @@ export class UsersService {
     }
 
     // Never hand the password hash back to a client.
-    const result = { ...user };
+    const result: any = { ...user };
     delete result.password;
+
+    // Pre-fills the Areas table on the edit-staff form.
+    result.areas =
+      user.userType === UserTypes.OUTLET_AGENT
+        ? await this.areaService.findByUser(id)
+        : [];
 
     return result;
   }
@@ -146,6 +147,14 @@ export class UsersService {
       }),
     );
 
+    if (data.userType === UserTypes.OUTLET_AGENT) {
+      await this.areaService.reconcileAreasForStaff(
+        user.id,
+        data.outletId,
+        data.areas ?? [],
+      );
+    }
+
     return this.findOne(user.id);
   }
 
@@ -182,21 +191,28 @@ export class UsersService {
       id,
       data.userType ?? user.userType,
       data.outletId,
+      data.areas,
     );
 
     return this.findOne(id);
   }
 
-  // Keeps the Staff join row in step with the user's role: outlet roles get a
-  // row pointing at the chosen outlet, everyone else gets none.
+  // Keeps the Staff join row in step with the user's role: outlet agents get
+  // a row pointing at the chosen outlet, everyone else gets none. Also
+  // reconciles the agent's Area list whenever one is explicitly submitted
+  // (an omitted `areas` means "not touched by this update", an empty array
+  // means "remove all areas" — both are valid, so this must check `!==
+  // undefined` rather than truthiness).
   private async syncStaffOutlet(
     userId: string,
     userType: UserTypes,
     outletId?: string,
+    areas?: AreaInput[],
   ) {
     const staff = await this.staffRepository.findOne({ where: { userId } });
+    const isOutletAgent = userType === UserTypes.OUTLET_AGENT;
 
-    if (OUTLET_ROLES.includes(userType) && outletId) {
+    if (isOutletAgent && outletId) {
       const outlet = await this.outletRepository.findOne({
         where: { id: outletId },
       });
@@ -213,11 +229,16 @@ export class UsersService {
         );
       }
 
+      if (areas !== undefined) {
+        await this.areaService.reconcileAreasForStaff(userId, outletId, areas);
+      }
+
       return;
     }
 
-    if (!OUTLET_ROLES.includes(userType) && staff) {
+    if (!isOutletAgent && staff) {
       await this.staffRepository.delete({ userId });
+      await this.areaService.deactivateAreasForUser(userId);
     }
   }
 
@@ -231,6 +252,7 @@ export class UsersService {
     }
 
     await this.staffRepository.delete({ userId: id });
+    await this.areaService.deactivateAreasForUser(id);
 
     return this.remove(id);
   }

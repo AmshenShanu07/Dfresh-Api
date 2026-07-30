@@ -19,12 +19,14 @@ import { UploadService } from '../upload/upload.service';
 import { Cart, CartItem } from '../cart/entities/cart.entity';
 import { CartService } from '../cart/cart.service';
 import { WardModule } from '../ward/ward.module';
+import { AreaModule } from '../area/area.module';
 import { Staff } from '../users/entities/staff.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
 
 @Module({
   imports: [
     WardModule,
+    AreaModule,
     TypeOrmModule.forFeature([
       ShareCatalog,
       ShareCatalogProducts,

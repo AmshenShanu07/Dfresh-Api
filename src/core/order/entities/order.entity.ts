@@ -57,8 +57,16 @@ export class OrderDetails {
   @Column({ type: 'varchar', nullable: true })
   wardId: string | null;
 
-  // The delivery agent (a User with userType DELIVERY_AGENT) assigned to
-  // deliver this order. Required before the order can move to DISPATCHED.
+  // The area (sub-division of the ward) the customer's delivery address
+  // resolved to, if the ward had any configured. When set, deliveryAgentId is
+  // auto-assigned from Area.userId at address-confirmation time. Null when
+  // the ward had no areas — falls back to manual dispatch-time agent picking.
+  @Column({ type: 'varchar', nullable: true })
+  areaId: string | null;
+
+  // The delivery agent (a User with userType OUTLET_AGENT) assigned to
+  // deliver this order. Auto-set from the order's Area when one is present;
+  // otherwise required before the order can move to DISPATCHED.
   @Column({ type: 'varchar', nullable: true })
   deliveryAgentId: string | null;
 

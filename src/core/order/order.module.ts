@@ -12,6 +12,7 @@ import { Staff } from '../users/entities/staff.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
 import { JwtService } from '@nestjs/jwt';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { AreaModule } from '../area/area.module';
 import { OrderExpiryCronService } from './order-expiry.cron';
 import { InvoiceService } from './invoice.service';
 
@@ -30,6 +31,7 @@ import { InvoiceService } from './invoice.service';
       Outlets,
     ]),
     WhatsappModule,
+    AreaModule,
   ],
   controllers: [OrderController],
   providers: [OrderService, JwtService, OrderExpiryCronService, InvoiceService],

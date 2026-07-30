@@ -71,6 +71,12 @@ export class UserAddress {
   @Column({ type: 'varchar', nullable: true, default: null })
   wardId: string;
 
+  // The area (sub-division of the ward) the customer picked, if the ward had
+  // any configured at the time. Null when the ward had none, or for
+  // addresses saved before this feature existed.
+  @Column({ type: 'varchar', nullable: true, default: null })
+  areaId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

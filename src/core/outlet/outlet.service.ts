@@ -7,7 +7,6 @@ import { Repository } from 'typeorm';
 import { Outlets } from './entities/outlet.entity';
 import { Staff } from '../users/entities/staff.entity';
 import { User } from '../users/entities/user.entity';
-import { UserTypes } from 'src/common/enums';
 
 @Injectable()
 export class OutletService {
@@ -98,19 +97,6 @@ export class OutletService {
       isActive: updateOutletDto.isActive,
       wardId: updateOutletDto.wardId,
     });
-
-    const outletAgent = await this.staffRepository
-      .createQueryBuilder('staff')
-      .leftJoinAndSelect('staff.user', 'user')
-      .where('staff.outletId = :outletId', { outletId: id })
-      .andWhere('user.userType = :userType', { userType: UserTypes.OUTLET_AGENT })
-      .getOne();
-
-    if (outletAgent) {
-      await this.staffRepository.update(outletAgent.id, {
-        userId: updateOutletDto.userId,
-      });
-    }
 
     return this.findOne(id);
   }

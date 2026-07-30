@@ -18,6 +18,7 @@ import {
   ShareCatalogStatus,
   UserTypes,
 } from 'src/common/enums';
+import { AreaService } from '../area/area.service';
 
 /**
  * Result of {@link OrderService.selectPaymentMethod}.
@@ -54,6 +55,7 @@ export class OrderService {
     private readonly outletRepository: Repository<Outlets>,
     @InjectRepository(Staff)
     private readonly staffRepository: Repository<Staff>,
+    private readonly areaService: AreaService,
   ) {}
 
   /**
@@ -344,8 +346,8 @@ export class OrderService {
   /**
    * Resolves the delivery agents available for an order. The order's outlet is
    * derived from the customer's selected ward: the first outlet serving that
-   * ward (Outlets.wardId). Agents are the outlet's Staff whose user is a
-   * DELIVERY_AGENT. Returns the resolved outletId (null when none) and the
+   * ward (Outlets.wardId). Agents are the outlet's Staff whose user is an
+   * OUTLET_AGENT. Returns the resolved outletId (null when none) and the
    * agent list ([] when the ward maps to no outlet or the outlet has none).
    */
   async getDeliveryAgentsForOrder(orderId: string) {
@@ -370,7 +372,7 @@ export class OrderService {
     });
 
     const agents = staff
-      .filter((s) => s.user?.userType === UserTypes.DELIVERY_AGENT)
+      .filter((s) => s.user?.userType === UserTypes.OUTLET_AGENT)
       .map((s) => ({
         id: s.user.id,
         name: s.user.name,
@@ -490,6 +492,21 @@ export class OrderService {
     );
   }
 
+  /**
+   * Resolves an Area selection into the columns to persist. `areaId` is
+   * always captured for reference; `deliveryAgentId` is only set when the
+   * area is currently active, auto-routing the order to that area's owning
+   * agent immediately rather than waiting for dispatch-time manual picking.
+   * Returns `{}` when no area was selected (ward-only checkout, unchanged
+   * fallback behavior).
+   */
+  private async resolveAreaAssignment(areaId?: string | null) {
+    if (!areaId) return {};
+    const area = await this.areaService.findOneActive(areaId);
+    if (!area) return { areaId };
+    return { areaId: area.id, deliveryAgentId: area.userId };
+  }
+
   async updateOrderAddress(addressData: any) {
     try {
       await this.writeDeliveryDetails(addressData.flow_token, {
@@ -499,11 +516,16 @@ export class OrderService {
         name: addressData.name,
       });
 
+      const areaAssignment = await this.resolveAreaAssignment(
+        addressData.areaId,
+      );
+
       await this.orderDetailsRepository.update(addressData.flow_token, {
         status: OrderStatus.PENDING,
         // Capture the selected ward so the serving outlet can be derived when
         // assigning a delivery agent at dispatch. Only overwrite when provided.
         ...(addressData.wardId ? { wardId: addressData.wardId } : {}),
+        ...areaAssignment,
       });
 
       const order = await this.orderDetailsRepository.findOne({
@@ -526,6 +548,7 @@ export class OrderService {
       pinCode: string;
       phone: string;
       wardId?: string | null;
+      areaId?: string | null;
     },
   ) {
     try {
@@ -536,11 +559,14 @@ export class OrderService {
         name: address.name,
       });
 
+      const areaAssignment = await this.resolveAreaAssignment(address.areaId);
+
       await this.orderDetailsRepository.update(orderId, {
         status: OrderStatus.PENDING,
         // Capture the selected ward so the serving outlet can be derived when
         // assigning a delivery agent at dispatch. Only overwrite when provided.
         ...(address.wardId ? { wardId: address.wardId } : {}),
+        ...areaAssignment,
       });
 
       const order = await this.orderDetailsRepository.findOne({

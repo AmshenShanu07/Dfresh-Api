@@ -55,6 +55,7 @@ function buildService() {
     {} as any, // shareCatalogProductStock
     {} as any, // outlets
     {} as any, // staff
+    {} as any, // areaService
   );
   return { service, deliveryRepo };
 }

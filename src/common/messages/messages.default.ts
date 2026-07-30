@@ -152,6 +152,11 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     wardRowNamed: '{{wardName}} ({{wardNumber}})',
     wardRowUnnamed: 'Ward {{wardNumber}}',
     wardRowDescription: '{{localBodyName}}, {{districtName}}',
+    areaListHeader: 'Select your area',
+    areaListBody: 'Choose the area your delivery address falls under.',
+    areaListButton: 'Select Area',
+    areaListSection: 'Areas',
+    areaListMore: 'More areas',
     flowPrompt: 'Please share your delivery address',
     flowButton: 'Enter Address',
     confirm:

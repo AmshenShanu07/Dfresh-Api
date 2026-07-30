@@ -19,6 +19,7 @@ import { deriveOrderNumber } from '../order/order-number.util';
 import { UploadService } from '../upload/upload.service';
 import { CartService } from '../cart/cart.service';
 import { WardService } from '../ward/ward.service';
+import { AreaService } from '../area/area.service';
 import { MessagesService } from 'src/common/messages/messages.service';
 import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
 import {
@@ -48,6 +49,7 @@ export class WhatsappService {
     private uploadService: UploadService,
     private cartService: CartService,
     private wardService: WardService,
+    private areaService: AreaService,
     private invoiceService: InvoiceService,
     private messages: MessagesService,
   ) {
@@ -337,10 +339,21 @@ export class WhatsappService {
         return this.checkoutCart(phone);
       case 'pickWard':
         // parts: [wardId, orderId?]
-        return this.sendAddressFlowForm(phone, parts[0], parts[1]);
+        return this.sendAreaListOrForm(phone, parts[0], parts[1]);
       case 'wardPage':
         // parts: [page, orderId?]
         return this.sendWardList(phone, parseInt(parts[0], 10) || 0, parts[1]);
+      case 'pickArea':
+        // parts: [areaId, wardId, orderId?]
+        return this.sendAddressFlowForm(phone, parts[1], parts[2], parts[0]);
+      case 'areaPage':
+        // parts: [page, wardId, orderId?]
+        return this.sendAreaList(
+          phone,
+          parts[1],
+          parseInt(parts[0], 10) || 0,
+          parts[2],
+        );
     }
 
     // Legacy hyphen-prefixed actions (catalog entry / address / payment)
@@ -1428,38 +1441,58 @@ export class WhatsappService {
   }
 
   /**
-   * Builds the address Flow `flow_token`, carrying the picked ward (and the
-   * order id at checkout) so both can be recovered in `receiveAddress`.
-   * Onboarding: `WARD:<wardId>` · Checkout: `<orderId>|WARD:<wardId>`.
+   * Builds the address Flow `flow_token`, carrying the picked ward, the
+   * picked area (when the ward had any), and the order id at checkout, so
+   * all three can be recovered in `receiveAddress`. Segments are order-id
+   * (checkout only) · `WARD:<wardId>` · `AREA:<areaId>` (only when an area
+   * was picked), joined with `|`. Onboarding, no area: `WARD:<wardId>`.
    */
-  private buildAddressFlowToken(wardId: string | null, orderId?: string): string {
+  private buildAddressFlowToken(
+    wardId: string | null,
+    orderId?: string,
+    areaId?: string | null,
+  ): string {
     const parts: string[] = [];
     if (orderId) parts.push(orderId);
     parts.push(`WARD:${wardId ?? ''}`);
+    if (areaId) parts.push(`AREA:${areaId}`);
     return parts.join('|');
   }
 
   private parseAddressFlowToken(token: string): {
     wardId: string | null;
     orderId: string | null;
+    areaId: string | null;
   } {
-    if (!token) return { wardId: null, orderId: null };
-    if (token.includes('|')) {
-      const [first, second = ''] = token.split('|');
-      const wardId = second.startsWith('WARD:') ? second.slice(5) || null : null;
-      return { wardId, orderId: first || null };
+    if (!token) return { wardId: null, orderId: null, areaId: null };
+
+    const segments = token.split('|');
+
+    // Legacy token = plain orderId (no ward/area segments at all).
+    if (segments.length === 1 && !segments[0].startsWith('WARD:')) {
+      return { wardId: null, orderId: segments[0] || null, areaId: null };
     }
-    if (token.startsWith('WARD:')) {
-      return { wardId: token.slice(5) || null, orderId: null };
+
+    let orderId: string | null = null;
+    let wardId: string | null = null;
+    let areaId: string | null = null;
+    for (const segment of segments) {
+      if (segment.startsWith('WARD:')) {
+        wardId = segment.slice(5) || null;
+      } else if (segment.startsWith('AREA:')) {
+        areaId = segment.slice(5) || null;
+      } else if (segment) {
+        orderId = segment;
+      }
     }
-    // Legacy token = plain orderId (no ward).
-    return { wardId: null, orderId: token };
+    return { wardId, orderId, areaId };
   }
 
   private async sendAddressFlowForm(
     phone: string,
     wardId: string | null,
     orderId?: string,
+    areaId?: string | null,
   ) {
     const payload = {
       messaging_product: 'whatsapp',
@@ -1475,7 +1508,7 @@ export class WhatsappService {
             flow_message_version: '3',
             flow_id: '902959149367544',
             flow_cta: this.messages.get('address.flowButton'),
-            flow_token: this.buildAddressFlowToken(wardId, orderId),
+            flow_token: this.buildAddressFlowToken(wardId, orderId, areaId),
           },
         },
       },
@@ -1483,6 +1516,89 @@ export class WhatsappService {
 
     const response = await this.waInstance.post('/messages', payload);
     console.log('Address form sent:', response.data);
+  }
+
+  /**
+   * After a ward is picked, shows an Area list scoped to that ward if any are
+   * configured; otherwise falls straight through to the address form
+   * unchanged (areas roll out ward-by-ward, never blocking checkout).
+   */
+  private async sendAreaListOrForm(
+    phone: string,
+    wardId: string,
+    orderId?: string,
+  ) {
+    const areas = await this.areaService.findActiveByWard(wardId);
+    if (areas.length === 0) {
+      return this.sendAddressFlowForm(phone, wardId, orderId);
+    }
+    return this.sendAreaList(phone, wardId, 0, orderId);
+  }
+
+  /**
+   * Sends an interactive list of active areas for a ward. The picked area is
+   * carried into the address Flow form via the reply id
+   * (`pickArea~<areaId>~<wardId>[~<orderId>]`), mirroring `sendWardList`.
+   */
+  async sendAreaList(phone: string, wardId: string, page = 0, orderId?: string) {
+    const areas = await this.areaService.findActiveByWard(wardId);
+
+    if (areas.length === 0) {
+      return this.sendAddressFlowForm(phone, wardId, orderId);
+    }
+
+    const LIST_MAX = 10;
+    const PAGE_SIZE = 9;
+    let pageAreas: typeof areas;
+    let moreRow = false;
+
+    if (areas.length <= LIST_MAX) {
+      pageAreas = areas;
+    } else {
+      const start = page * PAGE_SIZE;
+      pageAreas = areas.slice(start, start + PAGE_SIZE);
+      if (pageAreas.length === 0) {
+        return this.sendAreaList(phone, wardId, 0, orderId); // out-of-range page, restart
+      }
+      moreRow = start + PAGE_SIZE < areas.length;
+    }
+
+    const suffix = orderId ? `~${orderId}` : '';
+    const rows: any[] = pageAreas.map((a) => ({
+      id: `pickArea~${a.id}~${wardId}${suffix}`,
+      title: this.truncate(a.name, 24),
+    }));
+    if (moreRow) {
+      rows.push({
+        id: `areaPage~${page + 1}~${wardId}${suffix}`,
+        title: this.messages.get('address.areaListMore'),
+      });
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        header: {
+          type: 'text',
+          text: this.messages.get('address.areaListHeader'),
+        },
+        body: { text: this.messages.get('address.areaListBody') },
+        footer: { text: this.messages.get('common.footer') },
+        action: {
+          button: this.messages.get('address.areaListButton'),
+          sections: [
+            { title: this.messages.get('address.areaListSection'), rows },
+          ],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Area list sent:', response.data);
   }
 
   private async sendAddressConfirmationButtons(
@@ -1551,6 +1667,7 @@ export class WhatsappService {
         pinCode: address.pinCode,
         phone: address.phone,
         wardId: address.wardId,
+        areaId: address.areaId,
       });
 
       if (order) {
@@ -1564,7 +1681,7 @@ export class WhatsappService {
   async receiveAddress(phone: string, addressJsonString: string) {
     try {
       const addressData = JSON.parse(addressJsonString);
-      const { wardId, orderId } = this.parseAddressFlowToken(
+      const { wardId, orderId, areaId } = this.parseAddressFlowToken(
         addressData.flow_token,
       );
 
@@ -1578,6 +1695,7 @@ export class WhatsappService {
             pinCode: addressData.pincode,
             phone: addressData.phone,
             wardId: wardId ?? null,
+            areaId: areaId ?? null,
           }),
         );
       }
@@ -1586,9 +1704,11 @@ export class WhatsappService {
       // Onboarding (no order) just saves the address and stops here.
       if (orderId) {
         addressData.flow_token = orderId;
-        // Preserve the ward parsed from the flow token so the order can record
-        // it (the token is about to be overwritten with the bare order id).
+        // Preserve the ward/area parsed from the flow token so the order can
+        // record them (the token is about to be overwritten with the bare
+        // order id).
         addressData.wardId = wardId ?? null;
+        addressData.areaId = areaId ?? null;
         const order = await this.orderService.updateOrderAddress(addressData);
         if (order) {
           await this.sendPaymentMethodButtons(phone, order.id, order.totalAmount);

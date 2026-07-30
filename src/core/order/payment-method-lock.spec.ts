@@ -53,6 +53,7 @@ function buildService(row: Partial<OrderDetails> | null) {
     {} as any, // shareCatalogProductStock
     {} as any, // outlets
     {} as any, // staff
+    {} as any, // areaService
   );
   return { service, orderRepo };
 }
