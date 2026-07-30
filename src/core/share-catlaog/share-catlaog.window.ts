@@ -1,6 +1,10 @@
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
+import { IST_TZ } from 'src/common/utils/date-range';
 
-export const IST_TZ = 'Asia/Kolkata';
+// Re-exported so the many existing importers of IST_TZ from this module keep
+// working; the single definition now lives in common/utils/date-range.ts.
+export { IST_TZ };
+
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
 function ymdToWeekday(ymd: string): string {

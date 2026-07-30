@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, IsNull, Repository } from 'typeorm';
 import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.entity';
 import { User } from '../users/entities/user.entity';
 import { Staff } from '../users/entities/staff.entity';
@@ -19,6 +19,23 @@ import {
   UserTypes,
 } from 'src/common/enums';
 import { AreaService } from '../area/area.service';
+import { isRangeKey, resolveRange } from 'src/common/utils/date-range';
+
+/**
+ * Sentinel `outletId` for orders that carry no ward (placed before ward capture
+ * existed), so they can be inspected instead of silently vanishing from every
+ * outlet-filtered view.
+ */
+export const UNASSIGNED_OUTLET = 'unassigned';
+
+/**
+ * Coerces a pagination query param to a positive integer, falling back on
+ * anything unusable — undefined, NaN, zero, negatives, junk strings.
+ */
+export function positiveIntOr(value: unknown, fallback: number): number {
+  const n = parseInt(String(value), 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 
 /**
  * Result of {@link OrderService.selectPaymentMethod}.
@@ -310,12 +327,66 @@ export class OrderService {
     }
   }
 
-  async findAll(filter: { pageNumber?: number; count?: number; status?: string }) {
-    const takeCount = parseInt((filter.count ?? 10) + '');
-    const skipCount = (parseInt((filter.pageNumber ?? 1) + '') - 1) * takeCount;
+  /**
+   * Paginated order list. Every filter is optional, so callers that pass only
+   * pageNumber/count/status behave exactly as before.
+   *
+   * Date filtering accepts either a preset `range` key (resolved to IST day
+   * boundaries) or explicit `from`/`to` instants, which take precedence.
+   *
+   * `outletId` filters by the ward the outlet serves: orders carry no outletId,
+   * only the customer's selected wardId, and outlets map to wards via
+   * Outlets.wardId (the same derivation getDeliveryAgentsForOrder uses). Ward
+   * is therefore the finest fidelity available — two outlets sharing a ward are
+   * indistinguishable here. The sentinel `'unassigned'` selects orders placed
+   * before ward capture existed (wardId IS NULL).
+   */
+  async findAll(filter: {
+    pageNumber?: number;
+    count?: number;
+    status?: string;
+    range?: string;
+    from?: string;
+    to?: string;
+    outletId?: string;
+  }) {
+    // `?? default` is not enough here: the global ValidationPipe's transform
+    // coerces an absent `@Query('count') count: number` to NaN rather than
+    // leaving it undefined, and NaN is not nullish — so the fallback never
+    // fired and TypeORM rejected the NaN skip with a 500. Guard on NaN too.
+    const takeCount = positiveIntOr(filter.count, 10);
+    const skipCount = (positiveIntOr(filter.pageNumber, 1) - 1) * takeCount;
 
     const where: any = {};
     if (filter.status) where.status = filter.status;
+
+    // Explicit from/to wins over the preset; invalid dates are ignored rather
+    // than silently returning nothing.
+    const explicitFrom = filter.from ? new Date(filter.from) : null;
+    const explicitTo = filter.to ? new Date(filter.to) : null;
+    if (
+      explicitFrom &&
+      explicitTo &&
+      !isNaN(explicitFrom.getTime()) &&
+      !isNaN(explicitTo.getTime())
+    ) {
+      where.createdAt = Between(explicitFrom, explicitTo);
+    } else if (isRangeKey(filter.range)) {
+      const { from, to } = resolveRange(filter.range);
+      where.createdAt = Between(from, to);
+    }
+
+    if (filter.outletId === UNASSIGNED_OUTLET) {
+      where.wardId = IsNull();
+    } else if (filter.outletId) {
+      const outlet = await this.outletRepository.findOne({
+        where: { id: filter.outletId, isDeleted: false },
+      });
+      // An outlet serving no ward can have no orders routed to it, so an empty
+      // page is the correct answer — not an unfiltered list.
+      if (!outlet?.wardId) return { total: 0, data: [] };
+      where.wardId = outlet.wardId;
+    }
 
     const [total, data] = await Promise.all([
       this.orderDetailsRepository.count({ where }),

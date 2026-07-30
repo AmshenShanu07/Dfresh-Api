@@ -29,13 +29,31 @@ export class OrderController {
     private readonly invoiceService: InvoiceService,
   ) {}
 
+  /**
+   * `range` (today | yesterday | last7) filters by IST calendar days;
+   * `from`/`to` override it with explicit instants. `outletId` filters by the
+   * ward the outlet serves, or use `unassigned` for orders with no ward.
+   * All filters are optional — omitting them yields the full list as before.
+   */
   @Get('list')
   findAll(
     @Query('pageNumber') pageNumber: number,
     @Query('count') count: number,
     @Query('status') status: string,
+    @Query('range') range: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('outletId') outletId: string,
   ) {
-    return this.orderService.findAll({ pageNumber, count, status });
+    return this.orderService.findAll({
+      pageNumber,
+      count,
+      status,
+      range,
+      from,
+      to,
+      outletId,
+    });
   }
 
   @Get('detail/:id')
