@@ -13,11 +13,13 @@ import { UpdateStaffDto } from './dto/update-staff.dto';
 import { UserTypeDto } from './dto/user-type.dto';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not } from 'typeorm';
+import { Repository, Not, In } from 'typeorm';
 import { User } from './entities/user.entity';
 import { Staff } from './entities/staff.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
-import { UserTypes } from 'src/common/enums';
+import { OrderDetails } from '../order/entities/order.entity';
+import { deriveOrderNumber } from '../order/order-number.util';
+import { UserTypes, OrderStatus } from 'src/common/enums';
 import { AreaService, AreaInput } from '../area/area.service';
 
 @Injectable()
@@ -29,6 +31,8 @@ export class UsersService {
     private staffRepository: Repository<Staff>,
     @InjectRepository(Outlets)
     private outletRepository: Repository<Outlets>,
+    @InjectRepository(OrderDetails)
+    private orderRepository: Repository<OrderDetails>,
     private jwtService: JwtService,
     private areaService: AreaService,
   ) {}
@@ -117,6 +121,78 @@ export class UsersService {
     return this.userRepository.find({
       where: { userType: userType.userType },
     });
+  }
+
+  // Staff Management list — everyone except customers.
+  async findAllStaff() {
+    const users = await this.userRepository.find({
+      where: { userType: Not(UserTypes.CUSTOMER) },
+      relations: { outletAgent: { outlet: true } },
+    });
+    return users.map(({ password, ...rest }) => rest);
+  }
+
+  // Customer Management list — order count excludes DRAFT (abandoned carts)
+  // and CANCELLED (never fulfilled/paid) orders, computed in a single query
+  // via loadRelationCountAndMap rather than N+1 per-customer lookups.
+  async findAllCustomers() {
+    const customers = await this.userRepository
+      .createQueryBuilder('user')
+      .where('user.userType = :userType', { userType: UserTypes.CUSTOMER })
+      .loadRelationCountAndMap(
+        'user.orderCount',
+        'user.OrderDetails',
+        'order',
+        (qb) =>
+          qb.andWhere('order.status NOT IN (:...excluded)', {
+            excluded: [OrderStatus.DRAFT, OrderStatus.CANCELLED],
+          }),
+      )
+      .orderBy('user.createdAt', 'DESC')
+      .getMany();
+    return customers.map(({ password, ...rest }) => rest);
+  }
+
+  // Customer detail page — profile plus qualifying order history and total
+  // spent. Same DRAFT/CANCELLED exclusion as findAllCustomers, so the order
+  // count shown here always matches the list page.
+  async findCustomerDetail(id: string) {
+    const customer = await this.userRepository.findOne({
+      where: { id, userType: UserTypes.CUSTOMER },
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    const orders = await this.orderRepository.find({
+      where: {
+        userId: id,
+        status: In([
+          OrderStatus.PENDING,
+          OrderStatus.CONFIRMED,
+          OrderStatus.DISPATCHED,
+          OrderStatus.DELIVERED,
+        ]),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    const totalSpent = orders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
+    const { password, ...customerInfo } = customer;
+
+    return {
+      ...customerInfo,
+      orderCount: orders.length,
+      totalSpent,
+      orders: orders.map((o) => ({
+        id: o.id,
+        orderNumber: deriveOrderNumber(o),
+        status: o.status,
+        totalAmount: o.totalAmount,
+        createdAt: o.createdAt,
+      })),
+    };
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {

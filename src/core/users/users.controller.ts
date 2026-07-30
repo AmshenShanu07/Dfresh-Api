@@ -48,6 +48,21 @@ export class UsersController {
     return this.usersService.findByUserType(query);
   }
 
+  @Get('staffs')
+  findAllStaff() {
+    return this.usersService.findAllStaff();
+  }
+
+  @Get('customers')
+  findAllCustomers() {
+    return this.usersService.findAllCustomers();
+  }
+
+  @Get('customer-detail/:id')
+  findCustomerDetail(@Param('id') id: string) {
+    return this.usersService.findCustomerDetail(id);
+  }
+
   @Get('detail/:id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
