@@ -14,6 +14,7 @@ import { OrderModule } from './core/order/order.module';
 import { WardModule } from './core/ward/ward.module';
 import { CuttingStyleModule } from './core/cutting-style/cutting-style.module';
 import { DashboardModule } from './core/dashboard/dashboard.module';
+import { ReportsModule } from './core/reports/reports.module';
 import { MessagesModule } from './common/messages/messages.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -48,6 +49,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
     WardModule,
     CuttingStyleModule,
     DashboardModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}

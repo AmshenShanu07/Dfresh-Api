@@ -20,6 +20,7 @@ import {
 } from 'src/common/enums';
 import { AreaService } from '../area/area.service';
 import { isRangeKey, resolveRange } from 'src/common/utils/date-range';
+import { positiveIntOr } from 'src/common/utils/pagination';
 
 /**
  * Sentinel `outletId` for orders that carry no ward (placed before ward capture
@@ -27,15 +28,6 @@ import { isRangeKey, resolveRange } from 'src/common/utils/date-range';
  * outlet-filtered view.
  */
 export const UNASSIGNED_OUTLET = 'unassigned';
-
-/**
- * Coerces a pagination query param to a positive integer, falling back on
- * anything unusable — undefined, NaN, zero, negatives, junk strings.
- */
-export function positiveIntOr(value: unknown, fallback: number): number {
-  const n = parseInt(String(value), 10);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
 
 /**
  * Result of {@link OrderService.selectPaymentMethod}.
@@ -350,10 +342,8 @@ export class OrderService {
     to?: string;
     outletId?: string;
   }) {
-    // `?? default` is not enough here: the global ValidationPipe's transform
-    // coerces an absent `@Query('count') count: number` to NaN rather than
-    // leaving it undefined, and NaN is not nullish — so the fallback never
-    // fired and TypeORM rejected the NaN skip with a 500. Guard on NaN too.
+    // `?? default` is not enough here — an absent numeric @Query arrives as
+    // NaN, which is not nullish. See positiveIntOr's comment for the full trap.
     const takeCount = positiveIntOr(filter.count, 10);
     const skipCount = (positiveIntOr(filter.pageNumber, 1) - 1) * takeCount;
 
