@@ -136,14 +136,6 @@ export class OrderItems {
   @Column({ type: 'float', default: 0 })
   cuttingCharge: number;
 
-  // Admin-recorded weight of the produce after cleaning. Record-only: does not
-  // affect price/totalPrice. Unit is what the admin selected at entry ('g'|'kg').
-  @Column({ type: 'float', nullable: true, default: null })
-  cleanedWeight: number | null;
-
-  @Column({ type: 'varchar', length: 2, nullable: true, default: null })
-  cleanedWeightUnit: string | null;
-
   @CreateDateColumn()
   createdAt: Date;
 

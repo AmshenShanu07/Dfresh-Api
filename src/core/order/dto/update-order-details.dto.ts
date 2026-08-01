@@ -1,28 +1,5 @@
-import { Type } from 'class-transformer';
-import {
-  IsArray,
-  IsEnum,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  IsString,
-  ValidateNested,
-} from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { OrderStatus } from 'src/common/enums';
-
-export class UpdateOrderItemWeightDto {
-  @IsNotEmpty()
-  @IsString()
-  id: string;
-
-  @IsOptional()
-  @IsNumber()
-  cleanedWeight: number | null;
-
-  @IsOptional()
-  @IsString()
-  cleanedWeightUnit: string | null;
-}
 
 export class UpdateOrderDetailsDto {
   @IsOptional()
@@ -34,10 +11,4 @@ export class UpdateOrderDetailsDto {
   @IsOptional()
   @IsString()
   deliveryAgentId?: string;
-
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => UpdateOrderItemWeightDto)
-  items?: UpdateOrderItemWeightDto[];
 }

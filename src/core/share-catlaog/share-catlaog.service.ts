@@ -13,7 +13,9 @@ import { ShareCatalogProducts } from './entities/share-catalog-products.entity';
 import { ShareCatalogProductStock } from './entities/share-catalog-product-stock.entity';
 import { Products } from '../product/entities/product.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
-import { ShareCatalogStatus } from 'src/common/enums';
+import { OrderDetails, OrderItems } from '../order/entities/order.entity';
+import { MeasurementType, ShareCatalogStatus } from 'src/common/enums';
+import { MONEY_STATUSES } from '../reports/reports.filters';
 import { toBase } from 'src/common/utils/units';
 import {
   ScheduleWindow,
@@ -35,6 +37,28 @@ export const SLOT_OCCUPYING_STATUSES = [
   ShareCatalogStatus.PAUSED,
 ];
 
+/**
+ * One row per product on a share catalog: its stock allocation and what it has
+ * sold in this catalog's windows. Amounts are in the product's base unit
+ * (g / ml / count); prices are the per-variant sale prices collapsed to a range.
+ */
+export interface ShareCatalogProductSummary {
+  productId: string;
+  name: string;
+  image: string[];
+  measurementType: MeasurementType;
+  isDeleted: boolean;
+  /** How many variant (weight SKU) rows this product contributes. */
+  variantCount: number;
+  minPrice: number | null;
+  maxPrice: number | null;
+  offered: number;
+  remaining: number;
+  soldQuantity: number;
+  soldAmount: number;
+  orders: number;
+}
+
 @Injectable()
 export class ShareCatlaogService {
   constructor(
@@ -48,6 +72,8 @@ export class ShareCatlaogService {
     private readonly productRepository: Repository<Products>,
     @InjectRepository(ProductVariant)
     private readonly variantRepository: Repository<ProductVariant>,
+    @InjectRepository(OrderItems)
+    private readonly orderItemsRepository: Repository<OrderItems>,
   ) {}
 
   private readonly detailRelations = {
@@ -342,6 +368,112 @@ export class ShareCatlaogService {
       where: { id },
       relations: this.detailRelations,
     });
+  }
+
+  /**
+   * Detail view for the admin: the catalog plus a per-PRODUCT roll-up
+   * (`productSummary`). The variant rows are still returned untouched for the
+   * edit screen; the view screen reads the roll-up instead so an admin sees one
+   * line per product with what is left and what it sold, rather than one line
+   * per weight SKU.
+   */
+  async findOneWithSummary(id: string) {
+    const catalog = await this.findOne(id);
+    if (!catalog) return null;
+    return {
+      ...catalog,
+      productSummary: await this.buildProductSummary(catalog),
+    };
+  }
+
+  /**
+   * Per-product roll-up for one share catalog.
+   *
+   * Stock comes from ShareCatalogProductStock (`offered` / `remaining`, in the
+   * product's base unit). Sales are attributed through
+   * OrderDetails.stockCatalogId — the same attribution the catalog-performance
+   * report uses — and restricted to booked-revenue statuses, so cancelled and
+   * never-confirmed carts do not count as sales.
+   *
+   * `soldQuantity` is derived from the order items (variant amount x quantity),
+   * not from `offered - remaining`, because offered is topped up additively on
+   * edit and would otherwise conflate a restock with a sale.
+   */
+  private async buildProductSummary(
+    catalog: ShareCatalog,
+  ): Promise<ShareCatalogProductSummary[]> {
+    const salesByProduct = await this.getSalesByProduct(catalog.id);
+
+    const stockByProduct = new Map<string, ShareCatalogProductStock>();
+    for (const s of catalog.ShareCatalogProductStock ?? []) {
+      stockByProduct.set(s.productId, s);
+    }
+
+    // One entry per product, in the order the products appear on the catalog.
+    const summaries = new Map<string, ShareCatalogProductSummary>();
+    for (const scp of catalog.ShareCatalogProducts ?? []) {
+      let row = summaries.get(scp.productId);
+      if (!row) {
+        const stock = stockByProduct.get(scp.productId);
+        const sales = salesByProduct.get(scp.productId);
+        row = {
+          productId: scp.productId,
+          name: scp.product?.name ?? 'Unknown product',
+          image: scp.product?.image ?? [],
+          measurementType:
+            scp.product?.measurementType ?? MeasurementType.WEIGHT,
+          isDeleted: scp.product?.isDeleted ?? false,
+          variantCount: 0,
+          minPrice: null,
+          maxPrice: null,
+          offered: stock?.offeredGrams ?? 0,
+          remaining: stock?.remainingGrams ?? 0,
+          soldQuantity: sales?.soldQuantity ?? 0,
+          soldAmount: sales?.soldAmount ?? 0,
+          orders: sales?.orders ?? 0,
+        };
+        summaries.set(scp.productId, row);
+      }
+
+      row.variantCount += 1;
+      const price = Number(scp.price) || 0;
+      row.minPrice = row.minPrice === null ? price : Math.min(row.minPrice, price);
+      row.maxPrice = row.maxPrice === null ? price : Math.max(row.maxPrice, price);
+    }
+
+    return [...summaries.values()];
+  }
+
+  /** Sold amount / quantity / order count per product for one catalog. */
+  private async getSalesByProduct(shareCatalogId: string) {
+    const rows = await this.orderItemsRepository
+      .createQueryBuilder('oi')
+      .innerJoin(OrderDetails, 'o', 'o.id = oi.orderId')
+      .leftJoin(ProductVariant, 'v', 'v.id = oi.variantId')
+      .select('oi.productId', 'productId')
+      .addSelect('COALESCE(SUM(COALESCE(v.weight, 0) * oi.quantity), 0)', 'soldQuantity')
+      .addSelect('COALESCE(SUM(oi.totalPrice), 0)', 'soldAmount')
+      .addSelect('COUNT(DISTINCT oi.orderId)', 'orders')
+      .where('o.stockCatalogId = :shareCatalogId', { shareCatalogId })
+      .andWhere('o.status IN (:...statuses)', { statuses: MONEY_STATUSES })
+      .groupBy('oi.productId')
+      .getRawMany<{
+        productId: string;
+        soldQuantity: string;
+        soldAmount: string;
+        orders: string;
+      }>();
+
+    return new Map(
+      rows.map((r) => [
+        r.productId,
+        {
+          soldQuantity: Number(r.soldQuantity ?? 0),
+          soldAmount: Number(r.soldAmount ?? 0),
+          orders: Number(r.orders ?? 0),
+        },
+      ]),
+    );
   }
 
   async getList(filter: FilterCommonDto) {

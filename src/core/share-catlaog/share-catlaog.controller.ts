@@ -52,7 +52,7 @@ export class ShareCatlaogController {
   @UseGuards(UserAuthGuard)
   @Get('detail/:id')
   findOne(@Param('id') id: string) {
-    return this.shareCatlaogService.findOne(id);
+    return this.shareCatlaogService.findOneWithSummary(id);
   }
 
   @ApiBearerAuth()

@@ -105,13 +105,23 @@ export class InvoiceService {
       for (const item of order.orderItems || []) {
         const nameCellW = cols.qty - cols.item - 4;
         const name = item.product?.name || 'Item';
-        const weightLine = this.perUnitWeight(item);
+        const wastage = this.wastageWeight(item);
+        // Grey detail lines under the product name. Rendered as separate lines
+        // rather than one joined string so a long Malayalam name and a wastage
+        // figure can't wrap into each other in a 52%-width cell.
+        const subLines = [
+          this.perUnitWeight(item),
+          wastage ? `Wastage ${wastage}` : '',
+        ].filter(Boolean);
         const addons = this.addonsText(item) || '—';
 
         const startY = y;
         doc.font('NotoML-Bold').fontSize(9).text(name, cols.item, y, { width: nameCellW });
-        if (weightLine) {
-          doc.font('NotoML').fontSize(8).fillColor('#555').text(weightLine, cols.item, doc.y, { width: nameCellW });
+        if (subLines.length) {
+          doc.font('NotoML').fontSize(8).fillColor('#555');
+          for (const line of subLines) {
+            doc.text(line, cols.item, doc.y, { width: nameCellW });
+          }
           doc.fillColor('black');
         }
         const nameEndY = doc.y;
@@ -174,8 +184,8 @@ export class InvoiceService {
 
       const gross = this.grossWeight(item);
       if (gross) field('GROSS', gross);
-      const net = this.netWeight(item);
-      if (net) field('NET', net);
+      const wastage = this.wastageWeight(item);
+      if (wastage) field('WASTAGE', wastage);
 
       field('QTY', this.formatQty(item));
       field('PRICE', `${this.money(item.price)} / unit`);
@@ -254,10 +264,23 @@ export class InvoiceService {
     return formatAmount(base, this.measurementType(item));
   }
 
-  /** Admin-recorded weight after cleaning, in the unit the admin entered. */
-  private netWeight(item: any): string {
-    if (item.cleanedWeight == null) return '';
-    return `${item.cleanedWeight} ${item.cleanedWeightUnit || ''}`.trim();
+  /**
+   * Cleaning loss for this line, as configured on the variant rather than
+   * measured: ProductVariant.wastageWeight is per unit in base units, so it is
+   * multiplied by the quantity ordered to match GROSS, which is also a total
+   * across the quantity.
+   *
+   * Blank unless cleaning was actually ordered — an uncleaned item is delivered
+   * whole, so printing a loss against it would be wrong — and blank when no
+   * wastage is configured. VOLUME and COUNT products are excluded implicitly:
+   * wastageWeight is documented as WEIGHT-only and held at 0 for them.
+   */
+  private wastageWeight(item: any): string {
+    if (!item.cleaning || !item.variant) return '';
+    const perUnit = Number(item.variant.wastageWeight) || 0;
+    const total = perUnit * (Number(item.quantity) || 0);
+    if (total <= 0) return '';
+    return formatAmount(total, this.measurementType(item));
   }
 
   private addonsText(item: any): string {

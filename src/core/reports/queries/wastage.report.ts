@@ -129,13 +129,12 @@ export const wastageReport = defineReport<WastageRow>({
    * columns and never summed into a single "wastage" figure for that reason.
    *
    * WEIGHT PRODUCTS ONLY. ProductVariant.wastageWeight is documented as
-   * meaningful only for WEIGHT, and OrderItems.cleanedWeightUnit is a
-   * varchar(2) that can only hold 'g'/'kg'. VOLUME and COUNT products are
-   * excluded rather than shown with a misleading zero.
+   * meaningful only for WEIGHT and held at 0 for VOLUME/COUNT, so those
+   * products are excluded rather than shown with a misleading zero.
    *
-   * All arithmetic goes through toGrams (spec'd separately) because the three
-   * sources use three different unit conventions — the enum is uppercase, the
-   * order column is lowercase, and the variant column is already in base units.
+   * All arithmetic goes through toGrams (spec'd separately) because the two
+   * sources use different unit conventions — the Purchase enum is uppercase,
+   * and the variant column is already in base units.
    */
   async run(ctx) {
     const { from, to } = ctx.range;

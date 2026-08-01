@@ -467,20 +467,15 @@ export class OrderService {
 
   /**
    * Single-call update from the admin order-detail page: persists the chosen
-   * status and per-item cleaned weights. Returns the fully-loaded order plus a
+   * status and delivery agent. Returns the fully-loaded order plus a
    * `statusChanged` flag so the caller can decide whether to notify the
-   * customer. Cleaned weight is record-only and never touches pricing.
+   * customer.
    */
   async updateOrderDetails(
     id: string,
     dto: {
       status?: OrderStatus;
       deliveryAgentId?: string;
-      items?: {
-        id: string;
-        cleanedWeight: number | null;
-        cleanedWeightUnit: string | null;
-      }[];
     },
   ) {
     const existing = await this.orderDetailsRepository.findOne({
@@ -488,17 +483,6 @@ export class OrderService {
       relations: { user: true, deliveryDetails: true },
     });
     if (!existing) return null;
-
-    // Persist cleaned weights, guarding to items that belong to this order.
-    for (const item of dto.items ?? []) {
-      await this.orderItemsRepository.update(
-        { id: item.id, orderId: id },
-        {
-          cleanedWeight: item.cleanedWeight,
-          cleanedWeightUnit: item.cleanedWeightUnit,
-        },
-      );
-    }
 
     const statusChanged =
       dto.status != null && dto.status !== existing.status;

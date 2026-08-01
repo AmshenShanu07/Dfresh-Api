@@ -1,13 +1,11 @@
 /**
  * Gram normalisation for the wastage report.
  *
- * Wastage data arrives in three incompatible shapes, which is the whole reason
+ * Wastage data arrives in two incompatible shapes, which is the whole reason
  * this helper exists rather than the report reaching for `toBase` directly:
  *
  *  - ProductVariant.wastageWeight — already in base units (grams), and per the
  *    entity comment only meaningful for WEIGHT products.
- *  - OrderItems.cleanedWeightUnit — a varchar(2), so it can physically only
- *    ever hold 'g' or 'kg'.
  *  - Purchase.quantityUnit / cleanedQntyUnit — the ProductUnits enum, which is
  *    uppercase ('KG', 'G', 'L', 'ML', 'COUNT').
  *
