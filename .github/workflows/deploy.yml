@@ -26,10 +26,32 @@ jobs:
         run: npm run build
 
       - name: Archive build
+        if: github.event_name == 'push'
         run: |
           tar -czf build.tar.gz dist package.json package-lock.json
 
+      - name: Verify deploy secrets are present
+        if: github.event_name == 'push'
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          APP_PATH: ${{ secrets.APP_PATH }}
+        run: |
+          missing=""
+          if [ -z "$EC2_HOST" ];    then missing="$missing EC2_HOST";    fi
+          if [ -z "$EC2_USER" ];    then missing="$missing EC2_USER";    fi
+          if [ -z "$EC2_SSH_KEY" ]; then missing="$missing EC2_SSH_KEY"; fi
+          if [ -z "$APP_PATH" ];    then missing="$missing APP_PATH";    fi
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            echo "Set them under Settings > Secrets and variables > Actions in this repository."
+            exit 1
+          fi
+          echo "All deploy secrets present."
+
       - name: Upload build to EC2
+        if: github.event_name == 'push'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -39,6 +61,7 @@ jobs:
           target: "/tmp"
 
       - name: Deploy on EC2
+        if: github.event_name == 'push'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
