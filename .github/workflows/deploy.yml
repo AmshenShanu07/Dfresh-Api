@@ -32,17 +32,12 @@ jobs:
 
       - name: Verify deploy secrets are present
         if: github.event_name == 'push'
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          APP_PATH: ${{ secrets.APP_PATH }}
         run: |
           missing=""
-          if [ -z "$EC2_HOST" ];    then missing="$missing EC2_HOST";    fi
-          if [ -z "$EC2_USER" ];    then missing="$missing EC2_USER";    fi
-          if [ -z "$EC2_SSH_KEY" ]; then missing="$missing EC2_SSH_KEY"; fi
-          if [ -z "$APP_PATH" ];    then missing="$missing APP_PATH";    fi
+          if [ -z "${{ secrets.EC2_HOST }}" ];    then missing="$missing EC2_HOST";    fi
+          if [ -z "${{ secrets.EC2_USER }}" ];    then missing="$missing EC2_USER";    fi
+          if [ -z "${{ secrets.EC2_SSH_KEY }}" ]; then missing="$missing EC2_SSH_KEY"; fi
+          if [ -z "${{ secrets.APP_PATH }}" ];    then missing="$missing APP_PATH";    fi
           if [ -n "$missing" ]; then
             echo "::error::Missing repository secrets:$missing"
             echo "Set them under Settings > Secrets and variables > Actions in this repository."
