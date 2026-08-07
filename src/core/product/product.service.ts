@@ -6,9 +6,10 @@ import {
   UpdateProductVariantDto,
   CuttingStyleDto,
 } from './dto/create-product-variant.dto';
-import { FilterCommonDto } from 'src/common/dto/filter.dto';
+import { ProductFilterDto } from './dto/filter-list.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { FindOptionsWhere, ILike, In, Repository } from 'typeorm';
+import { likeContains } from 'src/common/utils/search';
 import { Products } from './entities/product.entity';
 import {
   ProductVariant,
@@ -431,7 +432,7 @@ export class ProductService {
     });
   }
 
-  async getList(filter: FilterCommonDto) {
+  async getList(filter: ProductFilterDto) {
     let takeCount = parseInt(filter.count + '');
     let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
 
@@ -440,10 +441,25 @@ export class ProductService {
       skipCount = undefined;
     }
 
+    // One `where` shared by the count and the find, so `total` tracks the
+    // filtered result set instead of the full table.
+    const where: FindOptionsWhere<Products> = { isDeleted: false };
+    if (filter.search?.trim()) {
+      where.name = ILike(likeContains(filter.search));
+    }
+    // `!== undefined`, not truthiness — `false` is a real filter value.
+    if (filter.isActive !== undefined) {
+      where.isActive = filter.isActive;
+    }
+    // categoryId is a plain column on Products, so this needs no join.
+    if (filter.categoryId) {
+      where.categoryId = filter.categoryId;
+    }
+
     const [total, data] = await Promise.all([
-      this.productRepository.count({ where: { isDeleted: false } }),
+      this.productRepository.count({ where }),
       this.productRepository.find({
-        where: { isDeleted: false },
+        where,
         relations: {
           category: true,
           variants: { cuttingStyles: { cuttingStyle: true } },

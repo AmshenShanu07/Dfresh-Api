@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, IsNull, Repository } from 'typeorm';
+import { FindOptionsWhere, ILike, IsNull, Raw, Repository } from 'typeorm';
 import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.entity';
 import { User } from '../users/entities/user.entity';
 import { Staff } from '../users/entities/staff.entity';
@@ -19,8 +19,14 @@ import {
   UserTypes,
 } from 'src/common/enums';
 import { AreaService } from '../area/area.service';
-import { isRangeKey, resolveRange } from 'src/common/utils/date-range';
+import {
+  isRangeKey,
+  resolveCustomRange,
+  resolveRange,
+} from 'src/common/utils/date-range';
 import { positiveIntOr } from 'src/common/utils/pagination';
+import { likeContains } from 'src/common/utils/search';
+import { deriveOrderNumber, normaliseOrderNumber } from './order-number.util';
 
 /**
  * Sentinel `outletId` for orders that carry no ward (placed before ward capture
@@ -341,33 +347,35 @@ export class OrderService {
     from?: string;
     to?: string;
     outletId?: string;
+    search?: string;
   }) {
     // `?? default` is not enough here — an absent numeric @Query arrives as
     // NaN, which is not nullish. See positiveIntOr's comment for the full trap.
     const takeCount = positiveIntOr(filter.count, 10);
     const skipCount = (positiveIntOr(filter.pageNumber, 1) - 1) * takeCount;
 
-    const where: any = {};
-    if (filter.status) where.status = filter.status;
+    const base: FindOptionsWhere<OrderDetails> = {};
+    if (filter.status) base.status = filter.status as OrderStatus;
 
-    // Explicit from/to wins over the preset; invalid dates are ignored rather
-    // than silently returning nothing.
-    const explicitFrom = filter.from ? new Date(filter.from) : null;
-    const explicitTo = filter.to ? new Date(filter.to) : null;
-    if (
-      explicitFrom &&
-      explicitTo &&
-      !isNaN(explicitFrom.getTime()) &&
-      !isNaN(explicitTo.getTime())
-    ) {
-      where.createdAt = Between(explicitFrom, explicitTo);
-    } else if (isRangeKey(filter.range)) {
-      const { from, to } = resolveRange(filter.range);
-      where.createdAt = Between(from, to);
+    // Explicit from/to wins over the preset; both go through the IST-aware
+    // helpers rather than `new Date(...)`, which would read a yyyy-MM-dd
+    // calendar date as UTC midnight and shift the whole window by 5h30 —
+    // dropping most of the last day's orders. Invalid dates resolve to null
+    // and are ignored rather than silently returning nothing.
+    const window =
+      resolveCustomRange(filter.from, filter.to) ??
+      (isRangeKey(filter.range) ? resolveRange(filter.range) : null);
+    if (window) {
+      // Half-open [from, to) to match the helpers' contract; `Between` is
+      // inclusive at both ends and would leak the next day's first instant.
+      base.createdAt = Raw(
+        (alias) => `${alias} >= :dfFrom AND ${alias} < :dfTo`,
+        { dfFrom: window.from, dfTo: window.to },
+      );
     }
 
     if (filter.outletId === UNASSIGNED_OUTLET) {
-      where.wardId = IsNull();
+      base.wardId = IsNull();
     } else if (filter.outletId) {
       const outlet = await this.outletRepository.findOne({
         where: { id: filter.outletId, isDeleted: false },
@@ -375,8 +383,14 @@ export class OrderService {
       // An outlet serving no ward can have no orders routed to it, so an empty
       // page is the correct answer — not an unfiltered list.
       if (!outlet?.wardId) return { total: 0, data: [] };
-      where.wardId = outlet.wardId;
+      base.wardId = outlet.wardId;
     }
+
+    // One search box spans the order number and the customer. TypeORM's
+    // array-of-where form is an OR, so every branch re-spreads `base` to keep
+    // the other filters ANDed in — and the same array feeds count() and find()
+    // so `total` stays in step with the rows.
+    const where = this.buildOrderSearchWhere(base, filter.search);
 
     const [total, data] = await Promise.all([
       this.orderDetailsRepository.count({ where }),
@@ -389,7 +403,56 @@ export class OrderService {
       }),
     ]);
 
-    return { total, data };
+    // Derived here rather than in the client so the list shows the same number
+    // as the bill, the product label and the WhatsApp confirmation — all of
+    // which already go through deriveOrderNumber.
+    return {
+      total,
+      data: data.map((order) => ({
+        ...order,
+        orderNumber: deriveOrderNumber(order),
+      })),
+    };
+  }
+
+  /**
+   * Expands `base` into the OR-branches a search term needs, or returns it
+   * untouched when there is nothing to search for.
+   *
+   * The order number is derived, not stored, so it is matched by comparing the
+   * normalised term against the UUID with its hyphens removed. A term that
+   * normalises to nothing (`"DF-260727-"`) drops that branch entirely —
+   * otherwise its `%%` pattern would match every order.
+   */
+  private buildOrderSearchWhere(
+    base: FindOptionsWhere<OrderDetails>,
+    search?: string,
+  ): FindOptionsWhere<OrderDetails> | FindOptionsWhere<OrderDetails>[] {
+    const term = search?.trim();
+    if (!term) return base;
+
+    const branches: FindOptionsWhere<OrderDetails>[] = [
+      { ...base, user: { name: ILike(likeContains(term)) } },
+      { ...base, user: { phone: ILike(likeContains(term)) } },
+    ];
+
+    const orderNumber = normaliseOrderNumber(term);
+    if (orderNumber) {
+      branches.unshift({
+        ...base,
+        // CAST(... AS text) rather than `::text`: TypeORM's property-name
+        // rewriting does not understand the `::` operator and strips the
+        // quotes off the alias, leaving `OrderDetails.id` — which Postgres
+        // folds to `orderdetails` and then cannot find in the FROM clause.
+        id: Raw(
+          (alias) =>
+            `REPLACE(CAST(${alias} AS text), '-', '') ILIKE :dfOrderNo`,
+          { dfOrderNo: likeContains(orderNumber) },
+        ),
+      });
+    }
+
+    return branches;
   }
 
   async findOne(id: string) {

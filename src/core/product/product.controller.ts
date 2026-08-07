@@ -13,7 +13,7 @@ import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { CreateProductVariantDto, UpdateProductVariantDto } from './dto/create-product-variant.dto';
-import { FilterCommonDto } from 'src/common/dto/filter.dto';
+import { ProductFilterDto } from './dto/filter-list.dto';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { UserAuthGuard } from 'src/guards/user.guard';
 
@@ -45,7 +45,7 @@ export class ProductController {
   @ApiBearerAuth()
   @UseGuards(UserAuthGuard)
   @Get('/list')
-  getList(@Query() filter: FilterCommonDto) {
+  getList(@Query() filter: ProductFilterDto) {
     return this.productService.getList(filter);
   }
 

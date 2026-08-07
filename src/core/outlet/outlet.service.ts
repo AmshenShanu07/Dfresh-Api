@@ -3,7 +3,7 @@ import { CreateOutletDto } from './dto/create-outlet.dto';
 import { UpdateOutletDto } from './dto/update-outlet.dto';
 import { OutletFilterDto } from './dto/filter-list.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { Outlets } from './entities/outlet.entity';
 import { Staff } from '../users/entities/staff.entity';
 import { User } from '../users/entities/user.entity';
@@ -70,10 +70,21 @@ export class OutletService {
       skipCount = undefined;
     }
 
+    // One `where` shared by the count and the find, so `total` tracks the
+    // filtered result set instead of the full table.
+    // `!== undefined`, not truthiness — `false` is a real filter value.
+    const where: FindOptionsWhere<Outlets> = { isDeleted: false };
+    if (filter.isActive !== undefined) {
+      where.isActive = filter.isActive;
+    }
+    if (filter.isSalesEnabled !== undefined) {
+      where.isSalesEnabled = filter.isSalesEnabled;
+    }
+
     const [total, data] = await Promise.all([
-      this.outletRepository.count({ where: { isDeleted: false } }),
+      this.outletRepository.count({ where }),
       this.outletRepository.find({
-        where: { isDeleted: false },
+        where,
         relations: { OutletAgent: { user: true } },
         order: {
           [filter.sortBy]: filter.sortOrder === -1 ? 'ASC' : 'DESC',

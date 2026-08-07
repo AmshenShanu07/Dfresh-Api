@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { FilterCommonDto } from 'src/common/dto/filter.dto';
+import { CategoryFilterDto } from './dto/filter-list.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, ILike, Repository } from 'typeorm';
 import { Category } from './entities/category.entity';
+import { likeContains } from 'src/common/utils/search';
 
 @Injectable()
 export class CategoryService {
@@ -59,7 +60,7 @@ export class CategoryService {
     };
   }
 
-  async getList(filter: FilterCommonDto) {
+  async getList(filter: CategoryFilterDto) {
     let takeCount = parseInt(filter.count + '');
     let skipCount = (parseInt(filter.pageNumber + '') - 1) * takeCount;
 
@@ -68,10 +69,22 @@ export class CategoryService {
       skipCount = undefined;
     }
 
+    // One `where` shared by the count and the find: filtering only the find
+    // would leave `total` at the unfiltered figure and the pager would offer
+    // pages that come back empty.
+    const where: FindOptionsWhere<Category> = { isDeleted: false };
+    if (filter.search?.trim()) {
+      where.name = ILike(likeContains(filter.search));
+    }
+    // `!== undefined`, not truthiness — `false` is a real filter value.
+    if (filter.isActive !== undefined) {
+      where.isActive = filter.isActive;
+    }
+
     const [total, data] = await Promise.all([
-      this.categoryRepository.count({ where: { isDeleted: false } }),
+      this.categoryRepository.count({ where }),
       this.categoryRepository.find({
-        where: { isDeleted: false },
+        where,
         order: {
           createdAt: filter.sortOrder === -1 ? 'ASC' : 'DESC',
         },

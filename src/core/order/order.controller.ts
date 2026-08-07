@@ -30,10 +30,16 @@ export class OrderController {
   ) {}
 
   /**
-   * `range` (today | yesterday | last7) filters by IST calendar days;
-   * `from`/`to` override it with explicit instants. `outletId` filters by the
-   * ward the outlet serves, or use `unassigned` for orders with no ward.
+   * `range` (today | yesterday | last7 | …) filters by IST calendar days;
+   * `from`/`to` override it with explicit yyyy-MM-dd IST dates. `outletId`
+   * filters by the ward the outlet serves, or use `unassigned` for orders with
+   * no ward. `search` matches the order number (`DF-260727-A5953C`, its bare
+   * tail, or a raw UUID fragment) as well as the customer's name and phone.
    * All filters are optional — omitting them yields the full list as before.
+   *
+   * These stay as individual @Query params rather than a DTO: with the global
+   * ValidationPipe's transform, an absent numeric DTO field arrives as NaN
+   * instead of undefined (see common/utils/pagination.ts).
    */
   @Get('list')
   findAll(
@@ -44,6 +50,7 @@ export class OrderController {
     @Query('from') from: string,
     @Query('to') to: string,
     @Query('outletId') outletId: string,
+    @Query('search') search: string,
   ) {
     return this.orderService.findAll({
       pageNumber,
@@ -53,6 +60,7 @@ export class OrderController {
       from,
       to,
       outletId,
+      search,
     });
   }
 

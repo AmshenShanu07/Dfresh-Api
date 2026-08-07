@@ -12,7 +12,7 @@ import {
 import { CategoryService } from './category.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { FilterCommonDto } from 'src/common/dto/filter.dto';
+import { CategoryFilterDto } from './dto/filter-list.dto';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { UserAuthGuard } from 'src/guards/user.guard';
 
@@ -37,7 +37,7 @@ export class CategoryController {
   @ApiBearerAuth()
   @UseGuards(UserAuthGuard)
   @Get('/list')
-  getList(@Query() filter: FilterCommonDto) {
+  getList(@Query() filter: CategoryFilterDto) {
     return this.categoryService.getList(filter);
   }
 
