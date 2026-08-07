@@ -38,12 +38,18 @@ export const MESSAGE_LIMITS: Record<string, FieldKind> = {
   'common.buttonYes': 'buttonTitle',
   'common.buttonNo': 'buttonTitle',
 
+  'language.prompt': 'body',
+  'language.changed': 'body',
+  'language.buttonEnglish': 'buttonTitle',
+  'language.buttonMalayalam': 'buttonTitle',
+
   'onboarding.namePrompt': 'body',
   'onboarding.nameReprompt': 'body',
   'onboarding.welcome': 'body',
   'onboarding.mainMenu': 'body',
   'onboarding.buttonViewProducts': 'buttonTitle',
   'onboarding.buttonViewCart': 'buttonTitle',
+  'onboarding.buttonLanguage': 'buttonTitle',
 
   'category.listHeader': 'header',
   'category.listBody': 'body',

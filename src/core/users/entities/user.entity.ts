@@ -7,7 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { UserTypes } from 'src/common/enums';
+import { UserLanguage, UserTypes } from 'src/common/enums';
 
 @Entity('User')
 export class User {
@@ -31,6 +31,12 @@ export class User {
 
   @Column({ type: 'varchar', nullable: true, default: '' })
   address: string;
+
+  // The language this customer chats in. NULL means they have never been asked
+  // — that is what makes the onboarding language prompt fire exactly once.
+  // Everywhere else a NULL reads as English.
+  @Column({ type: 'enum', enum: UserLanguage, nullable: true, default: null })
+  language: UserLanguage | null;
 
   @CreateDateColumn()
   createdAt: Date;

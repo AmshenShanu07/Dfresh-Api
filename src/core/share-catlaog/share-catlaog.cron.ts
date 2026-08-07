@@ -84,15 +84,17 @@ export class ShareCatalogCronService {
         .execute();
     }
 
+    // `language` comes along so each broadcast is composed in the customer's
+    // own language without a per-recipient lookup.
     const customers = await this.userRepository.find({
       where: { userType: UserTypes.CUSTOMER },
-      select: ['phone'],
+      select: ['phone', 'language'],
     });
 
     this.logger.log(`Broadcasting to ${customers.length} customers`);
 
     await Promise.allSettled(
-      customers.map((c) => this.whatsappService.sendProduct(c.phone)),
+      customers.map((c) => this.whatsappService.sendProduct(c.phone, c.language)),
     );
   }
 }

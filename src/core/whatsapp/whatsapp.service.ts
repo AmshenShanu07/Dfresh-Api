@@ -11,6 +11,7 @@ import {
   OrderStatus,
   PaymentMethod,
   ShareCatalogStatus,
+  UserLanguage,
   UserTypes,
 } from 'src/common/enums';
 import { OrderService } from '../order/order.service';
@@ -28,6 +29,12 @@ import {
   computeNextWindowStart,
 } from '../share-catlaog/share-catlaog.window';
 import { categoryIdOf, groupEntriesByCategory } from './catalog-grouping';
+
+/** Reply-id code (`setLang~<code>`) → language. Anything else is not a language. */
+const LANGUAGE_BY_CODE: Record<string, UserLanguage> = {
+  [UserLanguage.EN]: UserLanguage.EN,
+  [UserLanguage.ML]: UserLanguage.ML,
+};
 
 @Injectable()
 export class WhatsappService {
@@ -105,68 +112,205 @@ export class WhatsappService {
             userType: UserTypes.CUSTOMER,
           }),
         );
-        return this.sendNamePromptMessage(phone);
+        // Language is settled before the name so the name prompt itself, and
+        // everything after it, can be in the customer's own language.
+        return this.sendLanguagePrompt(phone);
       }
 
-      if (!existingUser.name || !existingUser.name.trim()) {
-        if (type === 'text') {
-          const text =
-            data.entry[0].changes[0].value.messages[0].text?.body?.trim() || '';
-          if (!text) {
-            return this.sendNamePromptMessage(phone);
-          }
-          existingUser.name = text.slice(0, 100);
-          await this.userRepository.save(existingUser);
-          return this.promptWardIfNoAddress(existingUser.id, phone);
-        }
-        return this.sendNamePromptMessage(phone, true);
+      // Every language reply is answered here rather than in the interactive
+      // dispatch, because during onboarding it arrives before the customer has
+      // a name — and the name gate below answers any interactive reply from a
+      // nameless customer with the name prompt, swallowing the buttons.
+      const replyId = this.interactiveReplyId(message);
+      if (replyId?.startsWith('setLang~')) {
+        return this.handleLanguageSelection(phone, replyId.split('~')[1]);
       }
 
-      if (type == 'order') {
-        console.log('Order received', data.entry[0].changes[0].value.messages[0].order);
-        await this.createOrder(
-          data.entry[0].changes[0].value.messages[0].from,
-          data.entry[0].changes[0].value.messages[0].order.product_items,
-        );
+      // Only a customer still in onboarding is asked automatically. Anyone who
+      // already has a name predates this feature: they read English and switch
+      // from the main menu rather than being interrupted mid-conversation.
+      if (!existingUser.language && !existingUser.name?.trim()) {
+        return this.sendLanguagePrompt(phone);
       }
 
-      if (type == 'text') {
-        const body = message.text?.body?.trim() ?? '';
-        console.log('Text received', message.text);
-        // A greeting/first contact shows the welcome; any other free text shows
-        // the main menu instead of bouncing the user back to onboarding.
-        if (/^(hi|hello|hey|hai|start|menu)$/i.test(body)) {
-          return this.sendWelcomeMessage(existingUser.name, phone);
-        }
-        return this.sendMainMenu(existingUser.name, phone);
-      }
-
-      if (type == 'interactive') {
-        const interactive =
-          data.entry[0].changes[0].value.messages[0].interactive;
-        const interactiveType = interactive.type;
-
-        if (interactiveType === 'button_reply' || interactiveType === 'list_reply') {
-          const replyId =
-            interactiveType === 'button_reply'
-              ? interactive.button_reply.id
-              : interactive.list_reply.id;
-          return this.handleInteractiveReply(phone, replyId);
-        } else if (interactiveType === 'nfm_reply') {
-          const formData = interactive.nfm_reply.response_json;
-          return this.receiveAddress(phone, formData);
-        }
-      }
-
-      if (type == 'image') {
-        const mediaId = data.entry[0].changes[0].value.messages[0].image?.id;
-        if (mediaId) {
-          return this.handlePaymentScreenshot(phone, mediaId);
-        }
-      }
+      // Everything below resolves its copy in the customer's language without
+      // being handed it — see MessagesService.runWith.
+      return this.messages.runWith(existingUser.language, () =>
+        this.handleCustomerMessage(existingUser, message, type),
+      );
     } catch (error) {
       console.error(error);
     }
+  }
+
+  /** The reply id of an interactive button/list tap, or null for anything else. */
+  private interactiveReplyId(message: any): string | null {
+    const interactive = message?.interactive;
+    if (!interactive) return null;
+    if (interactive.type === 'button_reply') {
+      return interactive.button_reply?.id ?? null;
+    }
+    if (interactive.type === 'list_reply') {
+      return interactive.list_reply?.id ?? null;
+    }
+    return null;
+  }
+
+  /**
+   * Dispatch for a customer whose language is already settled. Always called
+   * inside that language's scope.
+   */
+  private async handleCustomerMessage(user: User, message: any, type: string) {
+    const phone = user.phone;
+
+    if (!user.name || !user.name.trim()) {
+      if (type === 'text') {
+        const text = message.text?.body?.trim() || '';
+        if (!text) {
+          return this.sendNamePromptMessage(phone);
+        }
+        user.name = text.slice(0, 100);
+        await this.userRepository.save(user);
+        return this.promptWardIfNoAddress(user.id, phone);
+      }
+      return this.sendNamePromptMessage(phone, true);
+    }
+
+    if (type == 'order') {
+      console.log('Order received', message.order);
+      await this.createOrder(message.from, message.order.product_items);
+    }
+
+    if (type == 'text') {
+      const body = message.text?.body?.trim() ?? '';
+      console.log('Text received', message.text);
+      // A greeting/first contact shows the welcome; any other free text shows
+      // the main menu instead of bouncing the user back to onboarding.
+      if (/^(hi|hello|hey|hai|start|menu)$/i.test(body)) {
+        return this.sendWelcomeMessage(user.name, phone);
+      }
+      return this.sendMainMenu(user.name, phone);
+    }
+
+    if (type == 'interactive') {
+      const replyId = this.interactiveReplyId(message);
+      if (replyId) {
+        return this.handleInteractiveReply(phone, replyId);
+      }
+      if (message.interactive?.type === 'nfm_reply') {
+        return this.receiveAddress(
+          phone,
+          message.interactive.nfm_reply.response_json,
+        );
+      }
+    }
+
+    if (type == 'image') {
+      const mediaId = message.image?.id;
+      if (mediaId) {
+        return this.handlePaymentScreenshot(phone, mediaId);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Language
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Asks the customer which language they want to chat in — before the name
+   * prompt for a new customer, and on demand from the main menu.
+   *
+   * The copy is read explicitly in English because this is the one message sent
+   * before we know the answer. `language.prompt` and the two button titles are
+   * kept identical in every bundle, so it reads the same whichever is used.
+   */
+  private async sendLanguagePrompt(phone: string) {
+    try {
+      const en = UserLanguage.EN;
+      const payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: phone,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          body: { text: this.messages.get('language.prompt', {}, en) },
+          footer: { text: this.messages.get('common.footer', {}, en) },
+          action: {
+            buttons: [
+              {
+                type: 'reply',
+                reply: {
+                  id: `setLang~${UserLanguage.EN}`,
+                  title: this.messages.get('language.buttonEnglish', {}, en),
+                },
+              },
+              {
+                type: 'reply',
+                reply: {
+                  id: `setLang~${UserLanguage.ML}`,
+                  title: this.messages.get('language.buttonMalayalam', {}, en),
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      const response = await this.waInstance.post('/messages', payload);
+      console.log('Language prompt sent:', response.data);
+    } catch (error: any) {
+      console.error(
+        'Error sending language prompt:',
+        error.response?.data || error.message,
+      );
+    }
+  }
+
+  /**
+   * Stores the language a customer picked and puts them back where they were:
+   * still onboarding → the name prompt; otherwise a confirmation and the main
+   * menu. Both already in the newly chosen language.
+   */
+  private async handleLanguageSelection(phone: string, code: string) {
+    const language = LANGUAGE_BY_CODE[code];
+    // An unrecognised code means a stale button from an older build — ask again
+    // rather than store something we cannot read back.
+    if (!language) {
+      return this.sendLanguagePrompt(phone);
+    }
+
+    const user = await this.userRepository.findOne({ where: { phone } });
+    if (!user) return;
+
+    user.language = language;
+    await this.userRepository.save(user);
+
+    return this.messages.runWith(language, async () => {
+      if (!user.name?.trim()) {
+        return this.sendNamePromptMessage(phone);
+      }
+      await this.sendText(phone, this.messages.get('language.changed'));
+      return this.sendMainMenu(user.name, phone);
+    });
+  }
+
+  /**
+   * Runs `fn` in the language of the customer on `phone`. Needed by the send
+   * paths triggered from the dashboard or a cron rather than by an inbound
+   * message — those have no language scope of their own and would otherwise
+   * fall back to English.
+   */
+  private async withCustomerLanguage<T>(
+    phone: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const user = await this.userRepository.findOne({
+      where: { phone },
+      select: ['id', 'language'],
+    });
+    return this.messages.runWith(user?.language, fn);
   }
 
   /** Entry buttons shown with the welcome / main menu. */
@@ -191,6 +335,14 @@ export class WhatsappService {
         },
       });
     }
+    // Third and last — WhatsApp rejects a button message with more than three.
+    buttons.push({
+      type: 'reply',
+      reply: {
+        id: 'changeLang',
+        title: this.messages.get('onboarding.buttonLanguage'),
+      },
+    });
     return buttons;
   }
 
@@ -271,17 +423,22 @@ export class WhatsappService {
    * Broadcast entry point — fired when a share catalog window opens.
    * Sends a short promo intro then the interactive product list (the catalog
    * is served from our own DB, not a Meta catalog message).
+   *
+   * `language` is passed in because the caller has already loaded every
+   * customer; looking it up again here would cost one query per recipient.
    */
-  async sendProduct(phone: string) {
+  async sendProduct(phone: string, language?: UserLanguage | null) {
     try {
-      const catalog = await this.getOpenCatalog();
-      if (!catalog) {
-        return this.sendUnavailableMessage(phone);
-      }
+      return await this.messages.runWith(language, async () => {
+        const catalog = await this.getOpenCatalog();
+        if (!catalog) {
+          return this.sendUnavailableMessage(phone);
+        }
 
-      await this.sendText(phone, this.messages.get('catalog.broadcast'));
+        await this.sendText(phone, this.messages.get('catalog.broadcast'));
 
-      return this.sendCategoryList(phone);
+        return this.sendCategoryList(phone);
+      });
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
     }
@@ -297,6 +454,10 @@ export class WhatsappService {
     const [action, ...parts] = replyId.split('~');
 
     switch (action) {
+      // `setLang~` is deliberately absent: receiveMessage intercepts it before
+      // the name gate, for every customer, so it never reaches this switch.
+      case 'changeLang':
+        return this.sendLanguagePrompt(phone);
       case 'pickCat':
         return this.sendProductList(phone, parts[0]);
       case 'catPage':
@@ -1774,24 +1935,27 @@ export class WhatsappService {
   async sendOrderConfirmationMessage(phone: string, order: any) {
     if (!order) return;
 
-    const itemLines = order.orderItems
-      .map((item: any) => this.orderItemLine(item))
-      .join('\n');
+    // Triggered from the dashboard, so it opens its own language scope.
+    await this.withCustomerLanguage(phone, async () => {
+      const itemLines = order.orderItems
+        .map((item: any) => this.orderItemLine(item))
+        .join('\n');
 
-    const body = this.messages.get('order.placed', {
-      lines: itemLines,
-      totalAmount: order.totalAmount,
-      address: this.orderAddressBlock(order.deliveryDetails),
+      const body = this.messages.get('order.placed', {
+        lines: itemLines,
+        totalAmount: order.totalAmount,
+        address: this.orderAddressBlock(order.deliveryDetails),
+      });
+
+      const payload = {
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: { body },
+      };
+
+      await this.waInstance.post('/messages', payload);
     });
-
-    const payload = {
-      messaging_product: 'whatsapp',
-      to: phone,
-      type: 'text',
-      text: { body },
-    };
-
-    await this.waInstance.post('/messages', payload);
   }
 
   /**
@@ -1802,46 +1966,49 @@ export class WhatsappService {
   async sendOrderStatusUpdateMessage(phone: string, order: any) {
     if (!order) return;
 
-    const shortId = String(order.id ?? '').slice(0, 8).toUpperCase();
+    // Triggered from the dashboard, so it opens its own language scope.
+    await this.withCustomerLanguage(phone, async () => {
+      const shortId = String(order.id ?? '').slice(0, 8).toUpperCase();
 
-    let headline: string;
-    // For a dispatched order, include the assigned delivery agent's contact so
-    // the customer knows who is bringing their order.
-    let agentBlock = '';
-    if (order.status === 'CONFIRMED') {
-      headline = this.messages.get('order.statusConfirmedHeadline');
-    } else if (order.status === 'DISPATCHED') {
-      headline = this.messages.get('order.statusDispatchedHeadline');
-      if (order.deliveryAgent?.name) {
-        agentBlock = this.messages.get('order.agentBlock', {
-          agentName: order.deliveryAgent.name,
-          agentContact: order.deliveryAgent.phone
-            ? this.messages.get('order.agentContact', {
-                agentPhone: order.deliveryAgent.phone,
-              })
-            : '',
-        });
+      let headline: string;
+      // For a dispatched order, include the assigned delivery agent's contact so
+      // the customer knows who is bringing their order.
+      let agentBlock = '';
+      if (order.status === 'CONFIRMED') {
+        headline = this.messages.get('order.statusConfirmedHeadline');
+      } else if (order.status === 'DISPATCHED') {
+        headline = this.messages.get('order.statusDispatchedHeadline');
+        if (order.deliveryAgent?.name) {
+          agentBlock = this.messages.get('order.agentBlock', {
+            agentName: order.deliveryAgent.name,
+            agentContact: order.deliveryAgent.phone
+              ? this.messages.get('order.agentContact', {
+                  agentPhone: order.deliveryAgent.phone,
+                })
+              : '',
+          });
+        }
+      } else {
+        // Not a customer-facing milestone; nothing to send.
+        return;
       }
-    } else {
-      // Not a customer-facing milestone; nothing to send.
-      return;
-    }
 
-    const body = this.messages.get('order.statusUpdate', {
-      headline,
-      orderNumber: shortId,
-      totalAmount: order.totalAmount,
-      agentBlock,
+      const body = this.messages.get('order.statusUpdate', {
+        headline,
+        orderNumber: shortId,
+        totalAmount: order.totalAmount,
+        agentBlock,
+      });
+
+      const payload = {
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: { body },
+      };
+
+      await this.waInstance.post('/messages', payload);
     });
-
-    const payload = {
-      messaging_product: 'whatsapp',
-      to: phone,
-      type: 'text',
-      text: { body },
-    };
-
-    await this.waInstance.post('/messages', payload);
   }
 
   private async sendPaymentMethodButtons(
@@ -2014,12 +2181,22 @@ export class WhatsappService {
         originalname: filename,
       });
 
-      await this.sendDocument(
-        phone,
-        url,
-        filename,
-        this.messages.get('order.billCaption', { orderNumber: orderNo }),
-      );
+      // Only the caption is translated — the bill PDF itself is unchanged.
+      // The order already carries its customer on most paths; fall back to a
+      // lookup for a guest order that has a phone but no user record.
+      const sendCaptioned = () =>
+        this.sendDocument(
+          phone,
+          url,
+          filename,
+          this.messages.get('order.billCaption', { orderNumber: orderNo }),
+        );
+
+      if (order.user) {
+        await this.messages.runWith(order.user.language, sendCaptioned);
+      } else {
+        await this.withCustomerLanguage(phone, sendCaptioned);
+      }
       await this.orderService.markBillSent(orderId);
     } catch (error) {
       await this.sendLog(

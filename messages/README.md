@@ -1,19 +1,44 @@
 # Editing the WhatsApp messages
 
-Every message the Daily Fresh bot sends to a customer lives in **`messages.json`**, next to this file.
-Change the text there and the bot uses it immediately — no rebuild, no restart, no deploy.
+Every message the Daily Fresh bot sends to a customer lives in one of two files next to this one:
 
-The text can be in any language. Write the whole file in Malayalam if you want; only the **keys**
-(the words on the left of the `:`) have to stay in English.
+| File | Used for |
+|---|---|
+| **`en.json`** | customers chatting in English |
+| **`ml.json`** | customers chatting in Malayalam |
+
+Change the text in either and the bot uses it immediately — no rebuild, no restart, no deploy.
+
+Both files hold the **same keys**; only the text differs. Only the keys (the words on the left of
+the `:`) have to stay in English — the text on the right is whatever the customer should read.
+
+### Which file a customer gets
+
+Each customer picks their language the first time they message the bot, and can change it any time
+with the **Change Language** button on the main menu. Their choice is stored against their number.
+
+### If a key is missing
+
+A key you delete from `ml.json` is **not** an error — the bot falls back through:
+
+```
+ml.json  →  en.json  →  the built-in English text in the code
+```
+
+So a half-finished translation shows English rather than a blank message. Deleting a key from
+`en.json` falls back to the built-in text the same way.
 
 ---
 
 ## How to edit
 
-1. Open `messages.json`.
+1. Open `en.json` or `ml.json` — whichever language you want to change.
 2. Find the key you want (use the tables below to know which one shows where).
 3. Change **only the text inside the quotes** on the right of the `:`.
 4. Save. The next message the bot sends uses your new text.
+
+**Changing one file does not change the other.** If a wording change should apply to everyone,
+make it in both.
 
 ```jsonc
 "onboarding": {
@@ -26,7 +51,8 @@ The text can be in any language. Write the whole file in Malayalam if you want; 
 
 - **Broken JSON** (a missing quote, comma or bracket) is ignored — the bot keeps using the last
   version that worked and writes the error to the server log. Fix the file and save again.
-- **A deleted key** falls back to the built-in English text. Nothing breaks.
+- **A deleted key** falls back to the other file, then to the built-in English text. Nothing breaks.
+- **A broken `ml.json`** does not affect English customers, and vice versa.
 - **A key you invent** is never used. The startup log lists unknown keys so typos are easy to spot.
 
 ---
@@ -266,8 +292,21 @@ Each measurement family has its own wording so the sentence reads naturally in a
 
 ## For developers
 
-- The file path can be overridden with the `MESSAGES_FILE` environment variable.
+- The directory holding the bundles can be overridden with the `MESSAGES_DIR` environment
+  variable. Files inside it are named after the language code: `en.json`, `ml.json`.
 - `src/common/messages/messages.default.ts` holds the built-in copy and defines the valid key set.
   Adding a message means adding it there (and to `messages.limits.ts` if it goes into a
-  length-limited field) — `messages.json` is then just an override layer.
-- If `messages.json` is deleted, the app writes a fresh copy from the defaults on next start.
+  length-limited field) — the bundles are then just override layers.
+- Lookup order is `<language>.json → en.json → MESSAGE_DEFAULTS`. Nothing throws; a key found
+  nowhere logs a warning and renders as an empty string.
+- If `en.json` is deleted, the app writes a fresh copy from the defaults on next start. A missing
+  `ml.json` is deliberately **not** seeded — a file of English text under an `ml` name would look
+  like a translation that had already been done. It logs a warning and serves English instead.
+- Which language a `messages.get()` resolves in is ambient, carried by an `AsyncLocalStorage`
+  scope. Open one with `messages.runWith(user.language, fn)` at any entry point that starts a
+  send — the webhook does it once per inbound message, and `WhatsappService` does it for the
+  dashboard- and cron-triggered sends. Code inside a scope never passes a language around.
+- `language.prompt`, `language.buttonEnglish` and `language.buttonMalayalam` are shown *before* the
+  customer's language is known, so they must stay **identical in every bundle**. A test enforces this.
+- `User.language` is nullable: `NULL` means the customer has never been asked, which is what makes
+  the onboarding prompt fire exactly once. Everywhere else a `NULL` reads as English.

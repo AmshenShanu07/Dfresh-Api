@@ -29,6 +29,16 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     fallbackItem: 'Item',
   },
 
+  language: {
+    // Shown before we know which language the customer reads, so this prompt and
+    // the two button titles must stay identical in every language file.
+    prompt: 'Please choose your language\nദയവായി നിങ്ങളുടെ ഭാഷ തിരഞ്ഞെടുക്കുക',
+    buttonEnglish: 'English',
+    buttonMalayalam: 'മലയാളം',
+    // Sent after a change from the main menu, already in the newly chosen language.
+    changed: 'Language updated.',
+  },
+
   onboarding: {
     namePrompt: 'Hi! Welcome to Daily Fresh. Please reply with your name to get started.',
     nameReprompt: 'Please share your name first to continue. Reply with your name.',
@@ -37,6 +47,7 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     mainMenu: 'Hi {{name}}! What would you like to do?',
     buttonViewProducts: 'View Products',
     buttonViewCart: 'View Cart',
+    buttonLanguage: 'Change Language',
   },
 
   category: {
