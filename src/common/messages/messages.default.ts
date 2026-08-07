@@ -2,12 +2,12 @@
  * Built-in copy for every customer-facing WhatsApp text.
  *
  * This object is the single source of truth for the *key set*. The text itself
- * is meant to be edited in `messages/messages.json` (see `messages/README.md`);
- * these defaults are the safety net — they are used when the JSON file is
- * missing a key, and to seed the file on first boot.
+ * is meant to be edited in `src/messages/{en,ml}.json` (see
+ * `src/messages/README.md`); these defaults are the safety net — they are used
+ * when the JSON file is missing a key, and to seed the file on first boot.
  *
  * `{{placeholder}}` tokens are filled in by MessagesService.get(). Every token
- * a key supports is documented in `messages/README.md`.
+ * a key supports is documented in `src/messages/README.md`.
  */
 
 export type MessageTree = { [key: string]: string | MessageTree };

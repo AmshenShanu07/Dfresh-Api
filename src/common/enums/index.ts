@@ -9,7 +9,7 @@ export enum UserTypes {
 
 /**
  * The language a customer chats in. Stored on `User` and used to pick which
- * message bundle (`messages/en.json` / `messages/ml.json`) replies come from.
+ * message bundle (`src/messages/en.json` / `src/messages/ml.json`) replies come from.
  *
  * The column is nullable: NULL means the customer has never been asked, which
  * is what triggers the language prompt during onboarding. Reads fall back to

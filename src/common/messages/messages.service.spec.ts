@@ -8,6 +8,9 @@ import { FIELD_LIMITS, MESSAGE_LIMITS } from './messages.limits';
 
 const { EN, ML } = UserLanguage;
 
+/** The bundles as checked in — `src/messages`, copied to `dist/messages` on build. */
+const SHIPPED_DIR = path.join(__dirname, '../../messages');
+
 /** The built-in text for a key, for asserting the fallback path. */
 const defaultText = (key: string) => flatten(MESSAGE_DEFAULTS).get(key);
 
@@ -337,7 +340,7 @@ describe('MessagesService', () => {
 });
 
 describe.each([UserLanguage.EN, UserLanguage.ML])('shipped %s.json', (lang) => {
-  const file = path.join(process.cwd(), 'messages', `${lang}.json`);
+  const file = path.join(SHIPPED_DIR, `${lang}.json`);
   const read = () => JSON.parse(fs.readFileSync(file, 'utf8'));
 
   it('parses', () => {
@@ -364,7 +367,7 @@ describe.each([UserLanguage.EN, UserLanguage.ML])('shipped %s.json', (lang) => {
 describe('shipped bundles', () => {
   const read = (lang: UserLanguage) =>
     JSON.parse(
-      fs.readFileSync(path.join(process.cwd(), 'messages', `${lang}.json`), 'utf8'),
+      fs.readFileSync(path.join(SHIPPED_DIR, `${lang}.json`), 'utf8'),
     );
 
   it("stays inside WhatsApp's field limits in the built-in defaults too", () => {

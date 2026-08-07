@@ -5,7 +5,7 @@
  * is already too long.
  *
  * Only the *raw template* is measured. A key containing placeholders can still
- * overflow once the values are substituted; the guide (messages/README.md)
+ * overflow once the values are substituted; the guide (src/messages/README.md)
  * calls this out.
  */
 

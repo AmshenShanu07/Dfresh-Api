@@ -17,9 +17,11 @@ const LANGUAGES: UserLanguage[] = [UserLanguage.EN, UserLanguage.ML];
 /**
  * Serves every customer-facing text from editable JSON files, one per language.
  *
- * The files live outside `src/` (default `<cwd>/messages/{en,ml}.json`) so they
- * survive `nest build` and can be edited straight on the server. Edits are
- * picked up automatically — no restart, no rebuild.
+ * The bundles ship *inside* the build output (`dist/messages/{en,ml}.json`),
+ * because only `dist` is copied to the server on deploy. Edits to those files
+ * are picked up automatically — no restart, no rebuild — but a redeploy replaces
+ * them, so wording changes belong in `src/messages/`. Point `MESSAGES_DIR` at a
+ * directory outside `dist` to keep server-side edits across deploys.
  *
  * Nothing here throws. A key resolves through three layers — the requested
  * language's file, then the English file, then MESSAGE_DEFAULTS — so an
@@ -58,8 +60,11 @@ export class MessagesService implements OnModuleInit, OnModuleDestroy {
   /** Keys already reported as missing / with a bad token, so logs stay quiet. */
   private readonly warned = new Set<string>();
 
+  // Resolved from __dirname so the same relative path works under ts-jest
+  // (src/messages) and a built process (dist/messages). nest-cli copies the
+  // JSON across on build; see the `assets` entry in nest-cli.json.
   readonly dirPath: string =
-    process.env.MESSAGES_DIR || path.join(process.cwd(), 'messages');
+    process.env.MESSAGES_DIR || path.join(__dirname, '../../messages');
 
   onModuleInit() {
     this.seedIfMissing();

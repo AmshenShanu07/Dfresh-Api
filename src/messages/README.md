@@ -7,7 +7,11 @@ Every message the Daily Fresh bot sends to a customer lives in one of two files 
 | **`en.json`** | customers chatting in English |
 | **`ml.json`** | customers chatting in Malayalam |
 
-Change the text in either and the bot uses it immediately — no rebuild, no restart, no deploy.
+Change the text in either and the bot uses it immediately — no rebuild, no restart.
+
+These two files are the **source of truth**, and get copied into the build output on deploy. On the
+server the running copy lives at `dist/messages/`; editing it there takes effect straight away, but
+the next deploy overwrites it. So make lasting wording changes here and deploy them.
 
 Both files hold the **same keys**; only the text differs. Only the keys (the words on the left of
 the `:`) have to stay in English — the text on the right is whatever the customer should read.
@@ -292,8 +296,12 @@ Each measurement family has its own wording so the sentence reads naturally in a
 
 ## For developers
 
+- The bundles live in `src/messages/` and are copied to `dist/messages/` by the `assets` entry in
+  `nest-cli.json`, because the deploy workflow ships only `dist/`. The service resolves them from
+  `__dirname`, so the same relative path works under ts-jest and in the built process.
 - The directory holding the bundles can be overridden with the `MESSAGES_DIR` environment
-  variable. Files inside it are named after the language code: `en.json`, `ml.json`.
+  variable. Files inside it are named after the language code: `en.json`, `ml.json`. Pointing it at
+  a directory outside `dist/` is the way to make server-side edits survive a redeploy.
 - `src/common/messages/messages.default.ts` holds the built-in copy and defines the valid key set.
   Adding a message means adding it there (and to `messages.limits.ts` if it goes into a
   length-limited field) — the bundles are then just override layers.

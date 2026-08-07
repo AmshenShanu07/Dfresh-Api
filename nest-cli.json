@@ -7,7 +7,7 @@
   },
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": ["assets/fonts/*.ttf"],
+    "assets": ["assets/fonts/*.ttf", "messages/*.json"],
     "watchAssets": true
   }
 }

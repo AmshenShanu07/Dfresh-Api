@@ -71,6 +71,24 @@ export class WhatsappService {
         Authorization: `Bearer ${this.waUserToken}`,
       },
     });
+
+    // When Meta rejects a message the customer simply sees nothing, and several
+    // senders below have no catch of their own — the raw axios error then
+    // reaches receiveMessage's console.error as an unreadable dump with the
+    // reason buried. Surface Meta's own explanation, and the payload that
+    // caused it, before letting the error carry on unchanged.
+    this.waInstance.interceptors.response.use(undefined, (error) => {
+      const meta = error?.response?.data?.error;
+      if (meta) {
+        console.error(
+          `WhatsApp API rejected a message: ${meta.message}` +
+            (meta.error_data?.details ? ` — ${meta.error_data.details}` : '') +
+            ` (code ${meta.code}${meta.error_subcode ? `/${meta.error_subcode}` : ''})`,
+        );
+        console.error('Rejected payload:', error.config?.data);
+      }
+      return Promise.reject(error);
+    });
   }
 
   async receiveMessage(data: any) {
