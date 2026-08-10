@@ -2,13 +2,15 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { CreateCatlogDto } from './dto/create-catlog.dto';
 import { RemoveCatlogProductDto } from '../category/dto/remove-product.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
 import { UpdateCatlogDto } from './dto/update-catlog.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { ENABLED_STATUSES } from 'src/common/enums';
 import { Catalog } from './entities/catalog.entity';
 import { CatalogProducts } from './entities/catalog-products.entity';
 import { CatalogProductVariants } from './entities/catalog-product-variants.entity';
@@ -77,7 +79,7 @@ export class CatlogService {
 
   findOne(id: string) {
     return this.catalogRepository.findOne({
-      where: { id },
+      where: { id, isDeleted: false },
       relations: {
         CatalogProducts: { product: true, catalogVariants: { variant: true } },
       },
@@ -93,9 +95,12 @@ export class CatlogService {
       skipCount = undefined;
     }
 
+    // The count must carry the same filter as the find, or the page total
+    // over-reports and the last page renders short.
     const [total, data] = await Promise.all([
-      this.catalogRepository.count(),
+      this.catalogRepository.count({ where: { isDeleted: false } }),
       this.catalogRepository.find({
+        where: { isDeleted: false },
         relations: {
           CatalogProducts: {
             product: { category: true },
@@ -113,7 +118,13 @@ export class CatlogService {
     return { total, data };
   }
 
-  getCatalogProducts(id: string) {
+  async getCatalogProducts(id: string) {
+    const catalog = await this.catalogRepository.findOne({
+      where: { id, isDeleted: false },
+      select: ['id'],
+    });
+    if (!catalog) return [];
+
     return this.catalogProductsRepository.find({
       where: { catalogId: id },
       relations: { product: { category: true }, catalogVariants: { variant: true } },
@@ -122,7 +133,7 @@ export class CatlogService {
 
   async removeProduct(data: RemoveCatlogProductDto) {
     const catalog = await this.catalogRepository.findOne({
-      where: { id: data.catlogId },
+      where: { id: data.catlogId, isDeleted: false },
     });
 
     if (!catalog) {
@@ -142,6 +153,15 @@ export class CatlogService {
   }
 
   async update(id: string, updateCatlogDto: UpdateCatlogDto) {
+    // Guard before the rebuild below wipes the child rows of a deleted catalog.
+    const catalog = await this.catalogRepository.findOne({
+      where: { id, isDeleted: false },
+      select: ['id'],
+    });
+    if (!catalog) {
+      throw new NotFoundException('Catalog not found');
+    }
+
     const existingProducts = await this.catalogProductsRepository.find({ where: { catalogId: id } });
     for (const cp of existingProducts) {
       await this.catalogProductVariantsRepository.delete({ catalogProductId: cp.id });
@@ -177,7 +197,46 @@ export class CatlogService {
     return this.findOne(id);
   }
 
-  softDelete(id: string) {
+  /**
+   * Hides a catalog from every list, dropdown and detail view without destroying
+   * it or the order history hanging off its share catalogs.
+   *
+   * An ACTIVE/LIVE share catalog is actively selling this catalog, so it blocks
+   * the delete outright. The remaining (INACTIVE/PAUSED) ones are hidden along
+   * with it — leaving them behind would let an admin toggle one back On later
+   * and push a deleted catalog live to customers.
+   */
+  async softDelete(id: string) {
+    const catalog = await this.catalogRepository.findOne({
+      where: { id, isDeleted: false },
+    });
+    if (!catalog) {
+      throw new NotFoundException('Catalog not found');
+    }
+
+    const shareCatalogs = await this.shareCatalogRepository.find({
+      where: { catalogId: id, isDeleted: false },
+    });
+
+    const blocking = shareCatalogs.filter((sc) =>
+      ENABLED_STATUSES.includes(sc.status),
+    );
+    if (blocking.length) {
+      const sc = blocking[0];
+      throw new ConflictException(
+        `Cannot delete: share catalog "${catalog.name}" ` +
+          `(${sc.daysOfWeek.join(',')} ${sc.startTime}-${sc.endTime}) is ${sc.status}. ` +
+          `Delete that share catalog first.`,
+      );
+    }
+
+    if (shareCatalogs.length) {
+      await this.shareCatalogRepository.update(
+        { id: In(shareCatalogs.map((sc) => sc.id)) },
+        { isDeleted: true },
+      );
+    }
+
     return this.catalogRepository.update(id, { isDeleted: true });
   }
 

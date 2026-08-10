@@ -22,6 +22,7 @@ import { WardModule } from '../ward/ward.module';
 import { AreaModule } from '../area/area.module';
 import { Staff } from '../users/entities/staff.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
+import { Catalog } from '../catlog/entities/catalog.entity';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { Outlets } from '../outlet/entities/outlet.entity';
       CartItem,
       Staff,
       Outlets,
+      Catalog,
     ]),
   ],
   controllers: [ShareCatlaogController],

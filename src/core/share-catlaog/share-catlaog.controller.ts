@@ -75,7 +75,14 @@ export class ShareCatlaogController {
   @ApiBearerAuth()
   @UseGuards(UserAuthGuard)
   @Delete('delete/:id')
-  remove(@Param('id') id: string) {
+  softDelete(@Param('id') id: string) {
+    return this.shareCatlaogService.softDelete(id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
+  @Delete('hard-delete/:id')
+  hardDelete(@Param('id') id: string) {
     return this.shareCatlaogService.remove(id);
   }
 }

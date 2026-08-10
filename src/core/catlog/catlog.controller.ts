@@ -88,8 +88,8 @@ export class CatlogController {
   @ApiBearerAuth()
   @UseGuards(UserAuthGuard)
   @Delete('delete/:id')
-  delete(@Param('id') id: string) {
-    return this.catlogService.hardDelete(id);
+  softDelete(@Param('id') id: string) {
+    return this.catlogService.softDelete(id);
   }
 
   @ApiBearerAuth()

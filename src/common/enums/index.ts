@@ -48,6 +48,20 @@ export enum ShareCatalogStatus {
   PAUSED = 'PAUSED',
 }
 
+/**
+ * Statuses the cron/customer flow treats as "enabled", and therefore also the
+ * only statuses that reserve a schedule slot and block an overlapping window.
+ * INACTIVE and PAUSED catalogs are not selling, so they release their slot —
+ * their schedule is re-validated when they are activated or resumed.
+ *
+ * Also the set that blocks deleting the underlying Catalog: a share catalog in
+ * any other status is soft-deleted alongside it.
+ */
+export const ENABLED_STATUSES = [
+  ShareCatalogStatus.ACTIVE,
+  ShareCatalogStatus.LIVE,
+];
+
 export enum OrderStatus {
   DRAFT = 'DRAFT',
   PENDING = 'PENDING',

@@ -7,9 +7,13 @@ import { In } from 'typeorm';
 import { ShareCatalog } from './entities/share-catalog.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { User } from '../users/entities/user.entity';
-import { UserTypes, ShareCatalogStatus } from 'src/common/enums';
+import {
+  UserTypes,
+  ShareCatalogStatus,
+  ENABLED_STATUSES,
+} from 'src/common/enums';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
-import { ShareCatlaogService, ENABLED_STATUSES } from './share-catlaog.service';
+import { ShareCatlaogService } from './share-catlaog.service';
 import { IST_TZ, computeCurrentWindowStart } from './share-catlaog.window';
 
 @Injectable()

@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { CreateShareCatlaogDto } from './dto/create-share-catlaog.dto';
@@ -14,7 +15,12 @@ import { ShareCatalogProductStock } from './entities/share-catalog-product-stock
 import { Products } from '../product/entities/product.entity';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { OrderDetails, OrderItems } from '../order/entities/order.entity';
-import { MeasurementType, ShareCatalogStatus } from 'src/common/enums';
+import { Catalog } from '../catlog/entities/catalog.entity';
+import {
+  ENABLED_STATUSES,
+  MeasurementType,
+  ShareCatalogStatus,
+} from 'src/common/enums';
 import { MONEY_STATUSES } from '../reports/reports.filters';
 import { toBase } from 'src/common/utils/units';
 import {
@@ -23,19 +29,6 @@ import {
   computeCurrentWindowStart,
 } from './share-catlaog.window';
 import { reconcileStock } from './stock-reconcile';
-
-/** Statuses the cron/customer flow treats as "enabled". */
-export const ENABLED_STATUSES = [
-  ShareCatalogStatus.ACTIVE,
-  ShareCatalogStatus.LIVE,
-];
-
-/** Statuses that occupy a time slot and thus block an overlapping schedule. */
-export const SLOT_OCCUPYING_STATUSES = [
-  ShareCatalogStatus.ACTIVE,
-  ShareCatalogStatus.LIVE,
-  ShareCatalogStatus.PAUSED,
-];
 
 /**
  * One row per product on a share catalog: its stock allocation and what it has
@@ -74,7 +67,11 @@ export class ShareCatlaogService {
     private readonly variantRepository: Repository<ProductVariant>,
     @InjectRepository(OrderItems)
     private readonly orderItemsRepository: Repository<OrderItems>,
+    @InjectRepository(Catalog)
+    private readonly catalogRepository: Repository<Catalog>,
   ) {}
+
+  private readonly logger = new Logger(ShareCatlaogService.name);
 
   private readonly detailRelations = {
     ShareCatalogProducts: { product: true, variant: true },
@@ -82,7 +79,23 @@ export class ShareCatlaogService {
     catalog: true,
   } as const;
 
+  /**
+   * The create wizard's dropdown already hides deleted catalogs, but the API
+   * does not — without this a share catalog could be attached to one directly.
+   */
+  private async assertCatalogSelectable(catalogId: string) {
+    const catalog = await this.catalogRepository.findOne({
+      where: { id: catalogId, isDeleted: false },
+      select: ['id'],
+    });
+    if (!catalog) {
+      throw new NotFoundException(`Catalog ${catalogId} not found`);
+    }
+  }
+
   async create(createShareCatlaogDto: CreateShareCatlaogDto) {
+    await this.assertCatalogSelectable(createShareCatlaogDto.catalogId);
+
     // Multiple catalogs may be enabled at once as long as their schedule
     // windows don't overlap.
     await this.assertNoOverlap({
@@ -232,23 +245,33 @@ export class ShareCatlaogService {
   }
 
   /**
-   * Throws if `window` overlaps the schedule of any other slot-occupying
-   * catalog (ACTIVE / LIVE / PAUSED). `excludeId` skips the catalog itself when
-   * re-validating on activate/update.
+   * The first enabled (ACTIVE / LIVE) catalog whose schedule overlaps `window`,
+   * or null when the slot is free. `excludeId` skips the catalog itself when
+   * re-validating on activate/update/resume.
    */
-  private async assertNoOverlap(window: ScheduleWindow, excludeId?: string) {
+  private async findOverlapping(
+    window: ScheduleWindow,
+    excludeId?: string,
+  ): Promise<ShareCatalog | null> {
     const others = await this.shareCatalogRepository.find({
-      where: { status: In(SLOT_OCCUPYING_STATUSES), isDeleted: false },
+      where: { status: In(ENABLED_STATUSES), isDeleted: false },
       relations: { catalog: true },
     });
     for (const other of others) {
       if (other.id === excludeId) continue;
-      if (windowsOverlap(window, other)) {
-        throw new ConflictException(
-          `Schedule overlaps "${other.catalog?.name ?? other.id}" ` +
-            `(${other.daysOfWeek.join(',')} ${other.startTime}-${other.endTime})`,
-        );
-      }
+      if (windowsOverlap(window, other)) return other;
+    }
+    return null;
+  }
+
+  /** Same as findOverlapping, but raises the 409 the admin UI surfaces. */
+  private async assertNoOverlap(window: ScheduleWindow, excludeId?: string) {
+    const other = await this.findOverlapping(window, excludeId);
+    if (other) {
+      throw new ConflictException(
+        `Schedule overlaps "${other.catalog?.name ?? other.id}" ` +
+          `(${other.daysOfWeek.join(',')} ${other.startTime}-${other.endTime})`,
+      );
     }
   }
 
@@ -303,6 +326,11 @@ export class ShareCatlaogService {
    * mid-window); out-of-window it goes ACTIVE for the cron to promote at the next
    * window open. No-op for any non-PAUSED catalog or one still with no sellable
    * product.
+   *
+   * A PAUSED catalog does not reserve its slot, so another catalog may have
+   * taken the window in the meantime. In that case the catalog stays PAUSED
+   * (the top-up is still applied) until the admin reschedules it or switches
+   * the conflicting catalog off — resuming would put two catalogs live at once.
    */
   private async resumeIfSellable(id: string) {
     const catalog = await this.shareCatalogRepository.findOne({
@@ -314,6 +342,23 @@ export class ShareCatlaogService {
     });
     if (!catalog || catalog.status !== ShareCatalogStatus.PAUSED) return;
     if (!this.hasAnySellable(catalog)) return;
+
+    const conflict = await this.findOverlapping(
+      {
+        daysOfWeek: catalog.daysOfWeek,
+        startTime: catalog.startTime,
+        endTime: catalog.endTime,
+      },
+      catalog.id,
+    );
+    if (conflict) {
+      this.logger.warn(
+        `Share catalog ${catalog.id} stays PAUSED: its schedule now overlaps ` +
+          `"${conflict.catalog?.name ?? conflict.id}" ` +
+          `(${conflict.daysOfWeek.join(',')} ${conflict.startTime}-${conflict.endTime})`,
+      );
+      return;
+    }
 
     const windowStart = computeCurrentWindowStart(
       new Date(),
@@ -359,13 +404,14 @@ export class ShareCatlaogService {
 
   findAll() {
     return this.shareCatalogRepository.find({
+      where: { isDeleted: false },
       relations: this.detailRelations,
     });
   }
 
   findOne(id: string) {
     return this.shareCatalogRepository.findOne({
-      where: { id },
+      where: { id, isDeleted: false },
       relations: this.detailRelations,
     });
   }
@@ -485,9 +531,12 @@ export class ShareCatlaogService {
       skipCount = undefined;
     }
 
+    // The count must carry the same filter as the find, or the page total
+    // over-reports and the last page renders short.
     const [total, data] = await Promise.all([
-      this.shareCatalogRepository.count(),
+      this.shareCatalogRepository.count({ where: { isDeleted: false } }),
       this.shareCatalogRepository.find({
+        where: { isDeleted: false },
         order: {
           createdAt: filter.sortOrder === -1 ? 'ASC' : 'DESC',
         },
@@ -517,6 +566,10 @@ export class ShareCatlaogService {
       throw new NotFoundException(`ShareCatalog ${id} not found`);
     }
 
+    if (dto.catalogId !== undefined) {
+      await this.assertCatalogSelectable(dto.catalogId);
+    }
+
     const scheduleChanged =
       dto.daysOfWeek !== undefined ||
       dto.startTime !== undefined ||
@@ -527,9 +580,11 @@ export class ShareCatlaogService {
     if (dto.startTime !== undefined) catalog.startTime = dto.startTime;
     if (dto.endTime !== undefined) catalog.endTime = dto.endTime;
 
-    // Re-validate the resulting window only while the catalog occupies a slot;
-    // an INACTIVE catalog's schedule is checked when it is next activated.
-    if (scheduleChanged && SLOT_OCCUPYING_STATUSES.includes(catalog.status)) {
+    // Re-validate the resulting window for every status: a schedule is rejected
+    // on save if it collides with an enabled (ACTIVE/LIVE) catalog, even while
+    // this one is switched off. Two switched-off catalogs may still share a
+    // window, since only enabled catalogs reserve a slot.
+    if (scheduleChanged) {
       await this.assertNoOverlap(
         {
           daysOfWeek: catalog.daysOfWeek,
@@ -570,6 +625,36 @@ export class ShareCatlaogService {
       where: { id },
       relations: this.detailRelations,
     });
+  }
+
+  /**
+   * Hides a share catalog from every list and detail view, keeping its product
+   * rows, stock allocations and the orders placed against it intact.
+   *
+   * A LIVE catalog is closed first so its variants stop showing to customers,
+   * mirroring `setActive(false)` and `remove()`. Status drops to INACTIVE so a
+   * deleted row never reads as LIVE; the schedule slot is released either way,
+   * since `findOverlapping` already skips deleted catalogs.
+   */
+  async softDelete(id: string) {
+    const catalog = await this.shareCatalogRepository.findOne({
+      where: { id, isDeleted: false },
+      relations: { ShareCatalogProducts: true },
+    });
+    if (!catalog) {
+      throw new NotFoundException(`ShareCatalog ${id} not found`);
+    }
+
+    if (catalog.status === ShareCatalogStatus.LIVE) {
+      await this.closeCatalog(catalog);
+    }
+
+    await this.shareCatalogRepository.update(id, {
+      status: ShareCatalogStatus.INACTIVE,
+      isDeleted: true,
+    });
+
+    return { success: true };
   }
 
   /**
