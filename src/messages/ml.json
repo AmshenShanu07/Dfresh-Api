@@ -10,7 +10,7 @@
     "fallbackItem": "ഉൽപ്പന്നം"
   },
   "language": {
-    "prompt": "Please choose your language\n ",
+    "prompt": "Please choose your language\nദയവായി നിങ്ങളുടെ ഭാഷ തിരഞ്ഞെടുക്കുക",
     "buttonEnglish": "English",
     "buttonMalayalam": "മലയാളം",
     "changed": "ഭാഷ മാറ്റി."

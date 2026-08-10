@@ -121,8 +121,8 @@ describe('MessagesService', () => {
       });
       active = service;
 
-      expect(service.get('common.buttonYes', { name: 'Ramachandran' })).toBe(
-        'Yes, Ramachandra…',
+      expect(service.get('common.buttonYes', { name: 'Ramachandran Nair' })).toBe(
+        'Yes, Ramachandran N…',
       );
     });
 
