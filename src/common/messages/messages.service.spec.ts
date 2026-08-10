@@ -100,6 +100,62 @@ describe('MessagesService', () => {
     });
   });
 
+  describe("WhatsApp's field limits", () => {
+    it('cuts an over-long label down to the limit', () => {
+      // 'category.listButton' opens a list; Meta caps that button at 20 and
+      // rejects the entire message when it is longer.
+      const { service } = bootService({
+        en: { category: { listButton: 'View every single category' } },
+      });
+      active = service;
+
+      const text = service.get('category.listButton');
+      expect(text.length).toBe(FIELD_LIMITS.actionButton);
+      expect(text).toBe('View every single c…');
+    });
+
+    it('measures after interpolation, not before', () => {
+      // The template is well inside the limit; the value pushes it over.
+      const { service } = bootService({
+        en: { common: { buttonYes: 'Yes, {{name}}' } },
+      });
+      active = service;
+
+      expect(service.get('common.buttonYes', { name: 'Ramachandran' })).toBe(
+        'Yes, Ramachandra…',
+      );
+    });
+
+    it('leaves a text that fits exactly alone', () => {
+      const { service } = bootService({
+        en: { common: { buttonYes: '12345678901234567890' } },
+      });
+      active = service;
+
+      expect(service.get('common.buttonYes')).toBe('12345678901234567890');
+    });
+
+    it('does not touch a key with no declared limit', () => {
+      const { service } = bootService({ en: { t: { x: 'x'.repeat(2000) } } });
+      active = service;
+
+      expect(service.get('t.x')).toHaveLength(2000);
+    });
+
+    it('shortens the shipped Malayalam labels rather than dropping the message', () => {
+      // Anyone can edit the bundles on the server; the files are hot reloaded
+      // and never validated as a gate. Whatever they write must still send.
+      const { service } = bootService({
+        ml: { category: { listButton: 'കാറ്റഗറി തിരഞ്ഞെടുക്കുക' } },
+      });
+      active = service;
+
+      expect(service.get('category.listButton', {}, ML).length).toBeLessThanOrEqual(
+        FIELD_LIMITS.actionButton,
+      );
+    });
+  });
+
   describe('fallbacks', () => {
     it('uses the built-in text for a key missing from the file', () => {
       const { service } = bootService({ en: { cart: {} } });

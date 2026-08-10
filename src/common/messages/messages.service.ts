@@ -116,6 +116,9 @@ export class MessagesService implements OnModuleInit, OnModuleDestroy {
    * built-in default. `lang` defaults to the ambient language. A token with no
    * matching value renders as an empty string rather than leaking `{{token}}`
    * into a customer's chat.
+   *
+   * The result is cut to the WhatsApp limit for the field the key is rendered
+   * into, if it has one — see `clamp`.
    */
   get(
     key: string,
@@ -127,7 +130,7 @@ export class MessagesService implements OnModuleInit, OnModuleDestroy {
       this.warnOnce(`missing:${key}`, `No text found for message key "${key}"`);
       return '';
     }
-    return this.interpolate(template, vars, key);
+    return this.clamp(key, this.interpolate(template, vars, key));
   }
 
   /** True when the key exists in a file or in the defaults. */
@@ -171,6 +174,29 @@ export class MessagesService implements OnModuleInit, OnModuleDestroy {
       }
       return String(value);
     });
+  }
+
+  /**
+   * Cuts a text to the limit of the WhatsApp field it is rendered into.
+   *
+   * Meta rejects the *whole* message when one field is over — the customer is
+   * left staring at a chat that never replied — so a clipped label is the far
+   * better failure. `validate()` warns about over-long templates at load time,
+   * but that is only a warning, the bundles are edited live, and a substituted
+   * placeholder can push a field over on its own. This is the backstop.
+   */
+  private clamp(key: string, text: string): string {
+    const kind = MESSAGE_LIMITS[key];
+    if (!kind) return text;
+
+    const limit = FIELD_LIMITS[kind];
+    if (text.length <= limit) return text;
+
+    this.warnOnce(
+      `long:${key}`,
+      `Message "${key}" came to ${text.length} characters but WhatsApp allows ${limit} for a ${kind}; it was shortened to fit.`,
+    );
+    return text.slice(0, limit - 1) + '…';
   }
 
   private warnOnce(id: string, message: string) {
