@@ -21,6 +21,7 @@ import { OrderDetails } from '../order/entities/order.entity';
 import { deriveOrderNumber } from '../order/order-number.util';
 import { UserTypes, OrderStatus } from 'src/common/enums';
 import { AreaService, AreaInput } from '../area/area.service';
+import { normalisePhone } from 'src/common/utils/phone';
 
 @Injectable()
 export class UsersService {
@@ -151,6 +152,26 @@ export class UsersService {
       .orderBy('user.createdAt', 'DESC')
       .getMany();
     return customers.map(({ password, ...rest }) => rest);
+  }
+
+  /**
+   * One customer by phone, for the manual-order form's lookup. The number is
+   * normalised to the WhatsApp `wa_id` form first so a staff member typing
+   * `9876543210` finds the customer the bot stored as `919876543210`.
+   *
+   * Returns null rather than throwing: "no such customer yet" is the normal
+   * path into inline creation, not an error.
+   */
+  async lookupCustomerByPhone(phone: string) {
+    const normalised = normalisePhone(phone ?? '');
+    if (!normalised) return null;
+
+    const customer = await this.userRepository.findOne({
+      where: { phone: normalised, userType: UserTypes.CUSTOMER },
+    });
+    if (!customer) return null;
+
+    return { id: customer.id, name: customer.name, phone: customer.phone };
   }
 
   // Customer detail page — profile plus qualifying order history and total

@@ -78,8 +78,10 @@ export class OrderService {
    * both the product master stock and the live share-catalog allocation.
    * Idempotent via the OrderDetails.stockDeducted flag. If the live catalog
    * runs out of sellable products, it is auto-paused.
+   *
+   * Public so ManualOrderService can reuse it after its own transaction commits.
    */
-  private async applyStockDeduction(orderId: string) {
+  async applyStockDeduction(orderId: string) {
     const order = await this.orderDetailsRepository.findOne({
       where: { id: orderId },
       relations: { orderItems: { variant: true } },

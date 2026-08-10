@@ -8,6 +8,8 @@ import { ProductVariant } from '../product/entities/product-variant.entity';
 import { Products } from '../product/entities/product.entity';
 import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
 import { ShareCatalogProductStock } from '../share-catlaog/entities/share-catalog-product-stock.entity';
+import { ShareCatalogProducts } from '../share-catlaog/entities/share-catalog-products.entity';
+import { Ward } from '../ward/entities/ward.entity';
 import { Staff } from '../users/entities/staff.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
 import { JwtService } from '@nestjs/jwt';
@@ -15,6 +17,7 @@ import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { AreaModule } from '../area/area.module';
 import { OrderExpiryCronService } from './order-expiry.cron';
 import { InvoiceService } from './invoice.service';
+import { ManualOrderService } from './manual-order.service';
 
 @Module({
   imports: [
@@ -27,14 +30,22 @@ import { InvoiceService } from './invoice.service';
       Products,
       ShareCatalog,
       ShareCatalogProductStock,
+      ShareCatalogProducts,
       Staff,
       Outlets,
+      Ward,
     ]),
     WhatsappModule,
     AreaModule,
   ],
   controllers: [OrderController],
-  providers: [OrderService, JwtService, OrderExpiryCronService, InvoiceService],
+  providers: [
+    OrderService,
+    ManualOrderService,
+    JwtService,
+    OrderExpiryCronService,
+    InvoiceService,
+  ],
   exports: [OrderService],
 })
 export class OrderModule {}

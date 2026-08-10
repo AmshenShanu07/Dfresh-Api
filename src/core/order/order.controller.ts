@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Post,
   Put,
   Param,
   Query,
@@ -13,10 +14,12 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { OrderService } from './order.service';
+import { ManualOrderService } from './manual-order.service';
 import { InvoiceService } from './invoice.service';
 import { UserAuthGuard } from 'src/guards/user.guard';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { UpdateOrderDetailsDto } from './dto/update-order-details.dto';
+import { CreateManualOrderDto } from './dto/create-manual-order.dto';
 import { OrderStatus } from 'src/common/enums';
 import { deriveOrderNumber } from './order-number.util';
 
@@ -27,6 +30,7 @@ export class OrderController {
     private readonly orderService: OrderService,
     private readonly whatsappService: WhatsappService,
     private readonly invoiceService: InvoiceService,
+    private readonly manualOrderService: ManualOrderService,
   ) {}
 
   /**
@@ -62,6 +66,35 @@ export class OrderController {
       outletId,
       search,
     });
+  }
+
+  /**
+   * Everything the manual-order form's product picker needs in one call:
+   * products → variants with cleaning charge, cutting styles, catalog price
+   * prefill and current master stock.
+   */
+  @Get('manual/products')
+  getManualOrderProducts() {
+    return this.manualOrderService.getPickerProducts();
+  }
+
+  /**
+   * Creates an admin-entered order. It lands CONFIRMED, so the bill goes out
+   * the same way confirmOrder sends it. A send failure — a landline, a number
+   * not on WhatsApp — must not fail a legitimately placed order, so it is
+   * caught: the bill stays printable from the order list either way.
+   */
+  @Post('manual')
+  async createManualOrder(@Body() body: CreateManualOrderDto) {
+    const { orderId } = await this.manualOrderService.create(body);
+
+    try {
+      await this.whatsappService.sendOrderBill(orderId);
+    } catch (error) {
+      console.error('Manual order: bill send failed', orderId, error);
+    }
+
+    return this.orderService.findOne(orderId);
   }
 
   @Get('detail/:id')

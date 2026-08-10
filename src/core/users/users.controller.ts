@@ -58,6 +58,15 @@ export class UsersController {
     return this.usersService.findAllCustomers();
   }
 
+  /**
+   * Single customer by phone, for the manual-order form. Distinct from
+   * `customers`, which returns the entire table.
+   */
+  @Get('lookup')
+  lookupCustomer(@Query('phone') phone: string) {
+    return this.usersService.lookupCustomerByPhone(phone);
+  }
+
   @Get('customer-detail/:id')
   findCustomerDetail(@Param('id') id: string) {
     return this.usersService.findCustomerDetail(id);
