@@ -48,18 +48,26 @@ export class WardService {
     return this.findOne(ward.id);
   }
 
+  // `localBodyName`/`districtName`/`wardName` are jsonb — ordering on the
+  // column directly sorts by its raw JSON representation rather than the
+  // display text, so these order/sort on the English key specifically.
   findAll() {
-    return this.wardRepository.find({
-      where: { isDeleted: false },
-      order: { localBodyName: 'ASC', wardNumber: 'ASC' },
-    });
+    return this.wardRepository
+      .createQueryBuilder('ward')
+      .where('ward."isDeleted" = false')
+      .orderBy('ward."localBodyName"->>\'en\'', 'ASC')
+      .addOrderBy('ward."wardNumber"', 'ASC')
+      .getMany();
   }
 
   findAllActive() {
-    return this.wardRepository.find({
-      where: { isActive: true, isDeleted: false },
-      order: { localBodyName: 'ASC', wardNumber: 'ASC' },
-    });
+    return this.wardRepository
+      .createQueryBuilder('ward')
+      .where('ward."isActive" = true')
+      .andWhere('ward."isDeleted" = false')
+      .orderBy('ward."localBodyName"->>\'en\'', 'ASC')
+      .addOrderBy('ward."wardNumber"', 'ASC')
+      .getMany();
   }
 
   async filterList(filter: WardFilterDto) {
@@ -71,16 +79,20 @@ export class WardService {
       skipCount = undefined;
     }
 
+    const orderColumn =
+      filter.sortBy === 'localBodyName'
+        ? 'ward."localBodyName"->>\'en\''
+        : `ward."${filter.sortBy}"`;
+
     const [total, data] = await Promise.all([
       this.wardRepository.count({ where: { isDeleted: false } }),
-      this.wardRepository.find({
-        where: { isDeleted: false },
-        order: {
-          [filter.sortBy]: filter.sortOrder === -1 ? 'ASC' : 'DESC',
-        },
-        take: takeCount,
-        skip: skipCount,
-      }),
+      this.wardRepository
+        .createQueryBuilder('ward')
+        .where('ward."isDeleted" = false')
+        .orderBy(orderColumn, filter.sortOrder === -1 ? 'ASC' : 'DESC')
+        .take(takeCount)
+        .skip(skipCount)
+        .getMany(),
     ]);
 
     return { total, data };

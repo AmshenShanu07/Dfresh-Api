@@ -29,6 +29,7 @@ import {
   computeCurrentWindowStart,
 } from './share-catlaog.window';
 import { reconcileStock } from './stock-reconcile';
+import { LocalizedText } from 'src/common/utils/localized-text';
 
 /**
  * One row per product on a share catalog: its stock allocation and what it has
@@ -37,7 +38,7 @@ import { reconcileStock } from './stock-reconcile';
  */
 export interface ShareCatalogProductSummary {
   productId: string;
-  name: string;
+  name: LocalizedText;
   image: string[];
   measurementType: MeasurementType;
   isDeleted: boolean;
@@ -464,7 +465,7 @@ export class ShareCatlaogService {
         const sales = salesByProduct.get(scp.productId);
         row = {
           productId: scp.productId,
-          name: scp.product?.name ?? 'Unknown product',
+          name: scp.product?.name ?? { en: 'Unknown product', ml: 'Unknown product' },
           image: scp.product?.image ?? [],
           measurementType:
             scp.product?.measurementType ?? MeasurementType.WEIGHT,

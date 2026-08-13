@@ -27,6 +27,7 @@ import {
   manualOrderTotal,
 } from './manual-order.util';
 import { CreateManualOrderDto } from './dto/create-manual-order.dto';
+import { LocalizedText } from 'src/common/utils/localized-text';
 
 export type ManualPickerVariant = {
   id: string;
@@ -36,12 +37,12 @@ export type ManualPickerVariant = {
   /** Prefill for the form's price box; null when never catalogued. */
   catalogPrice: number | null;
   /** `id` is the CuttingStyle master id, matching OrderItems.cuttingOption. */
-  cuttingStyles: { id: string; name: string; price: number }[];
+  cuttingStyles: { id: string; name: LocalizedText; price: number }[];
 };
 
 export type ManualPickerProduct = {
   id: string;
-  name: string;
+  name: LocalizedText;
   categoryName: string | null;
   measurementType: MeasurementType;
   cleaning: boolean;
@@ -84,14 +85,17 @@ export class ManualOrderService {
    * exist to serve.
    */
   async getPickerProducts(): Promise<ManualPickerProduct[]> {
+    // `name` is jsonb — ordering on it via `find()`'s `order` option would sort
+    // by its raw JSON representation, so the fetched rows are sorted in JS by
+    // their English name instead.
     const products = await this.productRepository.find({
       where: { isDeleted: false, variants: { isDeleted: false } },
       relations: {
         category: true,
         variants: { cuttingStyles: { cuttingStyle: true } },
       },
-      order: { name: 'ASC' },
     });
+    products.sort((a, b) => a.name.en.localeCompare(b.name.en));
 
     const catalogEntries = await this.shareCatalogProductsRepository.find({
       relations: { shareCatalog: true },
@@ -108,7 +112,7 @@ export class ManualOrderService {
       .map((product: any) => ({
         id: product.id,
         name: product.name,
-        categoryName: product.category?.name ?? null,
+        categoryName: product.category?.name?.en ?? null,
         measurementType: product.measurementType,
         cleaning: product.cleaning,
         totalQuantity: product.totalQuantity,
@@ -122,7 +126,7 @@ export class ManualOrderService {
             .filter((s: any) => !s.isDeleted)
             .map((s: any) => ({
               id: s.cuttingStyleId,
-              name: s.cuttingStyle?.name ?? '',
+              name: s.cuttingStyle?.name ?? { en: '', ml: '' },
               price: s.price,
             })),
         })),

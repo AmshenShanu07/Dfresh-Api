@@ -2,13 +2,15 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
 import { MeasurementType, ProductUnits } from 'src/common/enums';
+import { LocalizedTextDto } from 'src/common/dto/localized-text.dto';
 import { CreateProductVariantDto } from './create-product-variant.dto';
 
 export class CreateProductDto {
-  @ApiProperty({ description: 'Name of the product', example: 'Tuna Fish' })
+  @ApiProperty({ description: 'Name of the product in English and Malayalam', type: LocalizedTextDto })
   @IsNotEmpty()
-  @IsString()
-  name: string;
+  @ValidateNested()
+  @Type(() => LocalizedTextDto)
+  name: LocalizedTextDto;
 
   @ApiProperty({ description: 'Description of the product', example: 'Fresh tuna' })
   @IsNotEmpty()

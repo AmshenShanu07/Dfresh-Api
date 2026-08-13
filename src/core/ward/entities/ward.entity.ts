@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
 } from 'typeorm';
 import { ConstituencyType } from 'src/common/enums';
+import { LocalizedText } from 'src/common/utils/localized-text';
 
 @Entity('Ward')
 export class Ward {
@@ -14,8 +15,8 @@ export class Ward {
   @Column({ type: 'int' })
   districtId: number;
 
-  @Column({ type: 'varchar' })
-  districtName: string;
+  @Column({ type: 'jsonb' })
+  districtName: LocalizedText;
 
   @Column({ type: 'enum', enum: ConstituencyType })
   constituencyType: ConstituencyType;
@@ -23,14 +24,14 @@ export class Ward {
   @Column({ type: 'varchar' })
   localBodyId: string;
 
-  @Column({ type: 'varchar' })
-  localBodyName: string;
+  @Column({ type: 'jsonb' })
+  localBodyName: LocalizedText;
 
   @Column({ type: 'varchar' })
   wardNumber: string;
 
-  @Column({ type: 'varchar', default: '' })
-  wardName: string;
+  @Column({ type: 'jsonb' })
+  wardName: LocalizedText;
 
   @Column({ type: 'boolean', default: true })
   isActive: boolean;

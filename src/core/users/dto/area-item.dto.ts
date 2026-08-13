@@ -1,5 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { LocalizedTextDto } from 'src/common/dto/localized-text.dto';
 
 // One row of the "Areas" list-builder on the outlet-agent (Staff) form.
 // `id` is present when editing an existing area (keeps/renames it); absent
@@ -10,8 +12,9 @@ export class AreaItemDto {
   @IsString()
   id?: string;
 
-  @ApiPropertyOptional({ example: 'MG Road' })
+  @ApiPropertyOptional({ type: LocalizedTextDto })
   @IsNotEmpty()
-  @IsString()
-  name: string;
+  @ValidateNested()
+  @Type(() => LocalizedTextDto)
+  name: LocalizedTextDto;
 }

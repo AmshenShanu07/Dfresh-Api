@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { format } from 'date-fns';
 import { join } from 'path';
 import * as PDFDocument from 'pdfkit';
-import { MeasurementType } from 'src/common/enums';
+import { MeasurementType, UserLanguage } from 'src/common/enums';
 import { formatAmount } from 'src/common/utils/units';
+import { localize } from 'src/common/utils/localized-text';
 import { deriveOrderNumber } from './order-number.util';
 import { applyMalayalamShaping } from './malayalam-shaping';
 
@@ -37,7 +38,7 @@ export class InvoiceService {
   };
 
   /** A4 customer bill covering the whole order. */
-  async generateBill(order: any): Promise<Buffer> {
+  async generateBill(order: any, lang: UserLanguage = UserLanguage.EN): Promise<Buffer> {
     return this.render({ size: 'A4', margin: 50 }, (doc) => {
       const orderNo = deriveOrderNumber(order);
       const pageWidth =
@@ -104,7 +105,7 @@ export class InvoiceService {
       doc.font('NotoML').fontSize(9);
       for (const item of order.orderItems || []) {
         const nameCellW = cols.qty - cols.item - 4;
-        const name = item.product?.name || 'Item';
+        const name = (item.product?.name && localize(item.product.name, lang)) || 'Item';
         const wastage = this.wastageWeight(item);
         // Grey detail lines under the product name. Rendered as separate lines
         // rather than one joined string so a long Malayalam name and a wastage
@@ -159,7 +160,7 @@ export class InvoiceService {
   }
 
   /** Compact per-line-item label (~80mm x 100mm) stuck onto the product. */
-  async generateLabel(item: any, order: any): Promise<Buffer> {
+  async generateLabel(item: any, order: any, lang: UserLanguage = UserLanguage.EN): Promise<Buffer> {
     // 80mm x 100mm in PDF points (1mm ≈ 2.8346pt).
     const width = 227;
     const height = 283;
@@ -179,7 +180,7 @@ export class InvoiceService {
         doc.font('NotoML').fontSize(9).text(value || '—');
       };
 
-      field('ITEM', item.product?.name || 'Item');
+      field('ITEM', (item.product?.name && localize(item.product.name, lang)) || 'Item');
       field('PREP', this.prepText(item));
 
       const gross = this.grossWeight(item);

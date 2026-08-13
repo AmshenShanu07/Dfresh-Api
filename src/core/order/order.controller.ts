@@ -20,7 +20,7 @@ import { UserAuthGuard } from 'src/guards/user.guard';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { UpdateOrderDetailsDto } from './dto/update-order-details.dto';
 import { CreateManualOrderDto } from './dto/create-manual-order.dto';
-import { OrderStatus } from 'src/common/enums';
+import { OrderStatus, UserLanguage } from 'src/common/enums';
 import { deriveOrderNumber } from './order-number.util';
 
 @Controller('order')
@@ -115,7 +115,10 @@ export class OrderController {
     const order = await this.orderService.findOne(id);
     if (!order) throw new NotFoundException('Order not found');
 
-    const pdf = await this.invoiceService.generateBill(order);
+    const pdf = await this.invoiceService.generateBill(
+      order,
+      order.user?.language ?? UserLanguage.EN,
+    );
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="bill-${deriveOrderNumber(order)}.pdf"`,
@@ -135,7 +138,11 @@ export class OrderController {
     const item = (order.orderItems || []).find((i: any) => i.id === itemId);
     if (!item) throw new NotFoundException('Order item not found');
 
-    const pdf = await this.invoiceService.generateLabel(item, order);
+    const pdf = await this.invoiceService.generateLabel(
+      item,
+      order,
+      order.user?.language ?? UserLanguage.EN,
+    );
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="label-${deriveOrderNumber(order)}.pdf"`,

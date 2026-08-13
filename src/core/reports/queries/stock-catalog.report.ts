@@ -144,13 +144,13 @@ export const stockCatalogReport = defineReport<StockCatalogRow>({
       .innerJoin(Products, 'p', 'p.id = s.productId')
       .leftJoin(Category, 'c', 'c.id = p.categoryId')
       .select('s.productId', 'productId')
-      .addSelect('p.name', 'product')
+      .addSelect("p.name->>'en'", 'product')
       .addSelect('p.measurementType', 'measurementType')
-      .addSelect('c.name', 'category')
+      .addSelect("c.name->>'en'", 'category')
       .addSelect('s.offeredGrams', 'offeredBase')
       .addSelect('s.remainingGrams', 'remainingBase')
       .where('s.shareCatalogId = :catalogId', { catalogId: catalog.id })
-      .orderBy('p.name', 'ASC')
+      .orderBy("p.name->>'en'", 'ASC')
       .limit(MAX_REPORT_ROWS + 1);
 
     if (ctx.filters.categoryId) {

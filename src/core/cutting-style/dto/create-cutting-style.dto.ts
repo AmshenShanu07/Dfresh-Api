@@ -1,15 +1,17 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { LocalizedTextDto } from 'src/common/dto/localized-text.dto';
 
 export class CreateCuttingStyleDto {
   @ApiProperty({
-    example: 'Curry cut',
-    description: 'Name of the cutting style',
-    required: true,
+    description: 'Name of the cutting style in English and Malayalam',
+    type: LocalizedTextDto,
   })
   @IsNotEmpty()
-  @IsString()
-  name: string;
+  @ValidateNested()
+  @Type(() => LocalizedTextDto)
+  name: LocalizedTextDto;
 
   @ApiProperty({
     example: 'Bone-in pieces suitable for curries',

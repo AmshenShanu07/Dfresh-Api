@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
@@ -6,8 +7,10 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  ValidateNested,
 } from 'class-validator';
 import { ConstituencyType } from 'src/common/enums';
+import { LocalizedTextDto } from 'src/common/dto/localized-text.dto';
 
 export class CreateWardDto {
   @ApiProperty({ example: 7, description: 'District id (1-14)', required: true })
@@ -16,13 +19,13 @@ export class CreateWardDto {
   districtId: number;
 
   @ApiProperty({
-    example: 'ERNAKULAM',
-    description: 'District name',
-    required: true,
+    description: 'District name in English and Malayalam',
+    type: LocalizedTextDto,
   })
   @IsNotEmpty()
-  @IsString()
-  districtName: string;
+  @ValidateNested()
+  @Type(() => LocalizedTextDto)
+  districtName: LocalizedTextDto;
 
   @ApiProperty({
     example: ConstituencyType.MUNICIPAL_CORPORATION,
@@ -44,13 +47,13 @@ export class CreateWardDto {
   localBodyId: string;
 
   @ApiProperty({
-    example: 'Kochi',
-    description: 'Local body name',
-    required: true,
+    description: 'Local body name in English and Malayalam',
+    type: LocalizedTextDto,
   })
   @IsNotEmpty()
-  @IsString()
-  localBodyName: string;
+  @ValidateNested()
+  @Type(() => LocalizedTextDto)
+  localBodyName: LocalizedTextDto;
 
   @ApiProperty({
     example: '12',
@@ -62,13 +65,13 @@ export class CreateWardDto {
   wardNumber: string;
 
   @ApiProperty({
-    example: 'Fort Kochi',
-    description: 'Ward name',
-    required: true,
+    description: 'Ward name in English and Malayalam',
+    type: LocalizedTextDto,
   })
   @IsNotEmpty()
-  @IsString()
-  wardName: string;
+  @ValidateNested()
+  @Type(() => LocalizedTextDto)
+  wardName: LocalizedTextDto;
 
   @ApiProperty({
     example: true,

@@ -51,11 +51,11 @@ function buildService(products: any[], catalogEntries: any[]) {
 
 const product = {
   id: 'product-1',
-  name: 'Seer Fish',
+  name: { en: 'Seer Fish', ml: 'Seer Fish' },
   measurementType: MeasurementType.WEIGHT,
   cleaning: true,
   totalQuantity: 5000,
-  category: { name: 'Fish' },
+  category: { name: { en: 'Fish', ml: 'Fish' } },
   variants: [
     {
       id: 'variant-1',
@@ -68,13 +68,13 @@ const product = {
           cuttingStyleId: 'style-curry',
           price: 15,
           isDeleted: false,
-          cuttingStyle: { id: 'style-curry', name: 'Curry Cut' },
+          cuttingStyle: { id: 'style-curry', name: { en: 'Curry Cut', ml: 'Curry Cut' } },
         },
         {
           cuttingStyleId: 'style-old',
           price: 99,
           isDeleted: true,
-          cuttingStyle: { id: 'style-old', name: 'Retired Cut' },
+          cuttingStyle: { id: 'style-old', name: { en: 'Retired Cut', ml: 'Retired Cut' } },
         },
       ],
     },
@@ -98,7 +98,7 @@ describe('ManualOrderService.getPickerProducts', () => {
     const [result] = await service.getPickerProducts();
 
     expect(result.id).toBe('product-1');
-    expect(result.name).toBe('Seer Fish');
+    expect(result.name).toEqual({ en: 'Seer Fish', ml: 'Seer Fish' });
     expect(result.categoryName).toBe('Fish');
     expect(result.totalQuantity).toBe(5000);
     expect(result.cleaning).toBe(true);
@@ -110,7 +110,7 @@ describe('ManualOrderService.getPickerProducts', () => {
     const [result] = await service.getPickerProducts();
 
     expect(result.variants[0].cuttingStyles).toEqual([
-      { id: 'style-curry', name: 'Curry Cut', price: 15 },
+      { id: 'style-curry', name: { en: 'Curry Cut', ml: 'Curry Cut' }, price: 15 },
     ]);
   });
 

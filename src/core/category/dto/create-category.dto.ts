@@ -1,12 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsNotEmpty, ValidateNested } from 'class-validator';
+import { LocalizedTextDto } from 'src/common/dto/localized-text.dto';
 
 export class CreateCategoryDto {
   @ApiProperty({
-    description: 'The name of the category',
-    example: 'Category 1',
+    description: 'The name of the category in English and Malayalam',
+    type: LocalizedTextDto,
   })
   @IsNotEmpty()
-  @IsString()
-  name: string;
+  @ValidateNested()
+  @Type(() => LocalizedTextDto)
+  name: LocalizedTextDto;
 }

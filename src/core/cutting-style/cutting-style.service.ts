@@ -4,11 +4,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { Raw, Repository } from 'typeorm';
 import { CuttingStyle } from './entities/cutting-style.entity';
 import { CreateCuttingStyleDto } from './dto/create-cutting-style.dto';
 import { UpdateCuttingStyleDto } from './dto/update-cutting-style.dto';
 import { CuttingStyleFilterDto } from './dto/filter-list.dto';
+
+/** Case-insensitive duplicate check against the English name — the identity a dashboard admin actually types against. */
+function byEnglishName(name: string) {
+  return Raw((alias) => `${alias}->>'en' ILIKE :name`, { name });
+}
 
 @Injectable()
 export class CuttingStyleService {
@@ -19,7 +24,7 @@ export class CuttingStyleService {
 
   async create(dto: CreateCuttingStyleDto) {
     const existing = await this.cuttingStyleRepository.findOne({
-      where: { name: ILike(dto.name), isDeleted: false },
+      where: { name: byEnglishName(dto.name.en), isDeleted: false },
     });
 
     if (existing) {
@@ -37,18 +42,24 @@ export class CuttingStyleService {
     return this.findOne(style.id);
   }
 
+  // A lowercase alias, not `cuttingStyle`: TypeORM does not quote raw
+  // where/orderBy strings, so an unquoted mixed-case alias gets folded to
+  // lowercase by Postgres and stops matching the (quoted) FROM-clause alias.
   findAll() {
-    return this.cuttingStyleRepository.find({
-      where: { isDeleted: false },
-      order: { name: 'ASC' },
-    });
+    return this.cuttingStyleRepository
+      .createQueryBuilder('style')
+      .where('style."isDeleted" = false')
+      .orderBy("style.name->>'en'", 'ASC')
+      .getMany();
   }
 
   findAllActive() {
-    return this.cuttingStyleRepository.find({
-      where: { isActive: true, isDeleted: false },
-      order: { name: 'ASC' },
-    });
+    return this.cuttingStyleRepository
+      .createQueryBuilder('style')
+      .where('style."isActive" = true')
+      .andWhere('style."isDeleted" = false')
+      .orderBy("style.name->>'en'", 'ASC')
+      .getMany();
   }
 
   async filterList(filter: CuttingStyleFilterDto) {
@@ -60,16 +71,21 @@ export class CuttingStyleService {
       skipCount = undefined;
     }
 
+    // `name` is jsonb — sorting on the column directly sorts by its raw JSON
+    // representation rather than the display text, so 'name' sorts on the
+    // English key specifically.
+    const orderColumn =
+      filter.sortBy === 'name' ? "style.name->>'en'" : `style."${filter.sortBy}"`;
+
     const [total, data] = await Promise.all([
       this.cuttingStyleRepository.count({ where: { isDeleted: false } }),
-      this.cuttingStyleRepository.find({
-        where: { isDeleted: false },
-        order: {
-          [filter.sortBy]: filter.sortOrder === -1 ? 'ASC' : 'DESC',
-        },
-        take: takeCount,
-        skip: skipCount,
-      }),
+      this.cuttingStyleRepository
+        .createQueryBuilder('style')
+        .where('style."isDeleted" = false')
+        .orderBy(orderColumn, filter.sortOrder === -1 ? 'ASC' : 'DESC')
+        .take(takeCount)
+        .skip(skipCount)
+        .getMany(),
     ]);
 
     return { total, data };
@@ -86,7 +102,7 @@ export class CuttingStyleService {
 
     if (dto.name) {
       const existing = await this.cuttingStyleRepository.findOne({
-        where: { name: ILike(dto.name), isDeleted: false },
+        where: { name: byEnglishName(dto.name.en), isDeleted: false },
       });
       if (existing && existing.id !== id) {
         throw new ConflictException(

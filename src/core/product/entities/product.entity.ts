@@ -9,14 +9,15 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { MeasurementType } from '../../../common/enums';
+import { LocalizedText } from '../../../common/utils/localized-text';
 
 @Entity('Products')
 export class Products {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar' })
-  name: string;
+  @Column({ type: 'jsonb' })
+  name: LocalizedText;
 
   @Column({ type: 'varchar' })
   description: string;

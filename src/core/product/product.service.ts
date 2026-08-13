@@ -8,7 +8,7 @@ import {
 } from './dto/create-product-variant.dto';
 import { ProductFilterDto } from './dto/filter-list.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, ILike, In, Repository } from 'typeorm';
+import { FindOptionsWhere, In, Raw, Repository } from 'typeorm';
 import { likeContains } from 'src/common/utils/search';
 import { Products } from './entities/product.entity';
 import {
@@ -445,7 +445,12 @@ export class ProductService {
     // filtered result set instead of the full table.
     const where: FindOptionsWhere<Products> = { isDeleted: false };
     if (filter.search?.trim()) {
-      where.name = ILike(likeContains(filter.search));
+      // `name` is jsonb — Postgres has no ILIKE for jsonb, so match against
+      // the English/Malayalam text inside it instead of the column directly.
+      where.name = Raw(
+        (alias) => `(${alias}->>'en' ILIKE :search OR ${alias}->>'ml' ILIKE :search)`,
+        { search: likeContains(filter.search) },
+      );
     }
     // `!== undefined`, not truthiness — `false` is a real filter value.
     if (filter.isActive !== undefined) {

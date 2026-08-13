@@ -6,6 +6,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
+import { LocalizedText } from '../../../common/utils/localized-text';
 
 // A sub-division of a Ward, owned by exactly one outlet agent (Staff/User).
 // Areas are never created standalone — they're added on the outlet-agent
@@ -16,8 +17,8 @@ export class Area {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar' })
-  name: string;
+  @Column({ type: 'jsonb' })
+  name: LocalizedText;
 
   @Column({ type: 'varchar' })
   wardId: string;

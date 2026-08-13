@@ -5,14 +5,15 @@ import {
   CreateDateColumn,
   OneToMany,
 } from 'typeorm';
+import { LocalizedText } from '../../../common/utils/localized-text';
 
 @Entity('Category')
 export class Category {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar' })
-  name: string;
+  @Column({ type: 'jsonb' })
+  name: LocalizedText;
 
   @Column({ type: 'boolean', default: true })
   isActive: boolean;

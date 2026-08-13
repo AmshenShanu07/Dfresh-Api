@@ -153,10 +153,10 @@ export const stockMasterReport = defineReport<StockMasterRow>({
       .leftJoin(ProductVariant, 'v', 'v.productId = p.id AND v.isDeleted = false')
       .leftJoin(Purchase, 'pur', 'pur.productId = p.id')
       .select('p.id', 'productId')
-      .addSelect('p.name', 'product')
+      .addSelect("p.name->>'en'", 'product')
       .addSelect('p.measurementType', 'measurementType')
       .addSelect('p.totalQuantity', 'onHandBase')
-      .addSelect('c.name', 'category')
+      .addSelect("c.name->>'en'", 'category')
       .addSelect('COUNT(DISTINCT v.id)', 'variants')
       .addSelect('MAX(pur."createdAt")', 'lastPurchase')
       .where('p.isDeleted = false')
@@ -166,7 +166,7 @@ export const stockMasterReport = defineReport<StockMasterRow>({
       .addGroupBy('p.measurementType')
       .addGroupBy('p.totalQuantity')
       .addGroupBy('c.name')
-      .orderBy('p.name', 'ASC')
+      .orderBy("p.name->>'en'", 'ASC')
       .limit(MAX_REPORT_ROWS + 1);
 
     if (ctx.filters.categoryId) {

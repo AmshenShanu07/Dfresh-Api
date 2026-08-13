@@ -29,6 +29,7 @@ import {
   computeNextWindowStart,
 } from '../share-catlaog/share-catlaog.window';
 import { categoryIdOf, groupEntriesByCategory } from './catalog-grouping';
+import { localize } from 'src/common/utils/localized-text';
 
 /** Reply-id code (`setLang~<code>`) → language. Anything else is not a language. */
 const LANGUAGE_BY_CODE: Record<string, UserLanguage> = {
@@ -660,7 +661,10 @@ export class WhatsappService {
     const catalog = await this.getOpenCatalog();
     if (!catalog) return this.sendUnavailableMessage(phone);
 
-    const categories = groupEntriesByCategory(this.sellableEntries(catalog));
+    const categories = groupEntriesByCategory(
+      this.sellableEntries(catalog),
+      this.messages.currentLanguage(),
+    );
 
     if (categories.length === 0) {
       return this.sendOutOfStockMessage(phone);
@@ -760,7 +764,7 @@ export class WhatsappService {
       if (!agg) {
         agg = {
           id: e.productId,
-          name: e.product.name,
+          name: localize(e.product.name, this.messages.currentLanguage()),
           cleaning: !!e.product.cleaning,
           cutting: !!e.product.cutting,
           measurementType:
@@ -796,7 +800,8 @@ export class WhatsappService {
     }
 
     const categoryName =
-      entries[0].product?.category?.name ??
+      (entries[0].product?.category?.name &&
+        localize(entries[0].product.category.name, this.messages.currentLanguage())) ||
       this.messages.get('catalog.listSectionFallback');
 
     // WhatsApp caps a list at 10 rows, and the back row costs one of them.
@@ -871,7 +876,10 @@ export class WhatsappService {
       return this.sendCategoryList(phone);
     }
 
-    const productName = entries[0].product?.name ?? this.messages.get('common.fallbackProduct');
+    const productName =
+      (entries[0].product?.name &&
+        localize(entries[0].product.name, this.messages.currentLanguage())) ||
+      this.messages.get('common.fallbackProduct');
     // The wording of the list depends on the measurement family: a weight, a
     // size or a pack. Each family has its own authored phrases.
     const family = this.measurementSuffix(
@@ -974,7 +982,7 @@ export class WhatsappService {
 
     const rows = styles.slice(0, 10).map((s: any) => ({
       id: `cutopt~${variantId}~${clean}~${s.cuttingStyleId}`,
-      title: this.truncate(s.cuttingStyle.name, 24),
+      title: this.truncate(localize(s.cuttingStyle.name, this.messages.currentLanguage()), 24),
       description:
         s.price > 0
           ? this.messages.get('prep.cuttingRowPrice', { price: s.price })
@@ -1016,7 +1024,9 @@ export class WhatsappService {
       return this.sendCategoryList(phone);
     }
 
-    const productName = entry.product?.name ?? this.messages.get('common.fallbackProduct');
+    const productName =
+      (entry.product?.name && localize(entry.product.name, this.messages.currentLanguage())) ||
+      this.messages.get('common.fallbackProduct');
     const weight = this.formatWeight(entry.variant);
     const price = entry.price;
 
@@ -1154,7 +1164,9 @@ export class WhatsappService {
     }
 
     return this.messages.get('cart.label', {
-      product: item.product?.name ?? this.messages.get('common.fallbackItem'),
+      product:
+        (item.product?.name && localize(item.product.name, this.messages.currentLanguage())) ||
+        this.messages.get('common.fallbackItem'),
       weightPart: weight
         ? this.messages.get('cart.labelWeightPart', { weight })
         : '',
@@ -1331,7 +1343,9 @@ export class WhatsappService {
     const match = (variant?.cuttingStyles ?? []).find(
       (s: any) => !s.isDeleted && s.cuttingStyleId === styleId,
     );
-    return match?.cuttingStyle?.name ?? null;
+    return match?.cuttingStyle?.name
+      ? localize(match.cuttingStyle.name, this.messages.currentLanguage())
+      : null;
   }
 
   private async handleCancelItem(phone: string) {
@@ -1565,27 +1579,31 @@ export class WhatsappService {
     }
 
     const suffix = orderId ? `~${orderId}` : '';
-    const rows: any[] = pageWards.map((w) => ({
-      id: `pickWard~${w.id}${suffix}`,
-      title: this.truncate(
-        w.wardName
-          ? this.messages.get('address.wardRowNamed', {
-              wardName: w.wardName,
-              wardNumber: w.wardNumber,
-            })
-          : this.messages.get('address.wardRowUnnamed', {
-              wardNumber: w.wardNumber,
-            }),
-        24,
-      ),
-      description: this.truncate(
-        this.messages.get('address.wardRowDescription', {
-          localBodyName: w.localBodyName,
-          districtName: w.districtName,
-        }),
-        72,
-      ),
-    }));
+    const lang = this.messages.currentLanguage();
+    const rows: any[] = pageWards.map((w) => {
+      const wardName = localize(w.wardName, lang);
+      return {
+        id: `pickWard~${w.id}${suffix}`,
+        title: this.truncate(
+          wardName
+            ? this.messages.get('address.wardRowNamed', {
+                wardName,
+                wardNumber: w.wardNumber,
+              })
+            : this.messages.get('address.wardRowUnnamed', {
+                wardNumber: w.wardNumber,
+              }),
+          24,
+        ),
+        description: this.truncate(
+          this.messages.get('address.wardRowDescription', {
+            localBodyName: localize(w.localBodyName, lang),
+            districtName: localize(w.districtName, lang),
+          }),
+          72,
+        ),
+      };
+    });
     if (moreRow) {
       rows.push({
         id: `wardPage~${page + 1}${suffix}`,
@@ -1745,7 +1763,7 @@ export class WhatsappService {
     const suffix = orderId ? `~${orderId}` : '';
     const rows: any[] = pageAreas.map((a) => ({
       id: `pickArea~${a.id}~${wardId}${suffix}`,
-      title: this.truncate(a.name, 24),
+      title: this.truncate(localize(a.name, this.messages.currentLanguage()), 24),
     }));
     if (moreRow) {
       rows.push({
@@ -1923,7 +1941,9 @@ export class WhatsappService {
 
     const unit = item.variant ? this.formatWeight(item.variant) : '';
     return this.messages.get('order.line', {
-      product: item.product?.name ?? this.messages.get('common.fallbackProduct'),
+      product:
+        (item.product?.name && localize(item.product.name, this.messages.currentLanguage())) ||
+        this.messages.get('common.fallbackProduct'),
       quantity: unit
         ? this.messages.get('order.lineQuantityWithUnit', {
             quantity: item.quantity,
@@ -2192,7 +2212,10 @@ export class WhatsappService {
 
       const orderNo = deriveOrderNumber(order);
       const filename = `bill-${orderNo}.pdf`;
-      const pdf = await this.invoiceService.generateBill(order);
+      const pdf = await this.invoiceService.generateBill(
+        order,
+        order.user?.language ?? UserLanguage.EN,
+      );
       const { url } = await this.uploadService.uploadFile({
         buffer: pdf,
         mimetype: 'application/pdf',

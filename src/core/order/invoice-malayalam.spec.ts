@@ -2,6 +2,7 @@ import * as fontkit from 'fontkit';
 import { inflateSync } from 'zlib';
 import { join } from 'path';
 import { InvoiceService } from './invoice.service';
+import { UserLanguage } from 'src/common/enums';
 
 const FONT_DIR = join(__dirname, '../../assets/fonts');
 
@@ -72,7 +73,7 @@ const order = (productName: string) => ({
       totalPrice: 250,
       cleaning: false,
       cutting: false,
-      product: { name: productName },
+      product: { name: { en: productName, ml: productName } },
       variant: { weight: 500 },
     },
   ],
@@ -82,20 +83,20 @@ describe('InvoiceService — Malayalam', () => {
   const service = new InvoiceService();
 
   it('embeds a Malayalam-capable font in the bill', async () => {
-    const buf = await service.generateBill(order('വെണ്ടയ്ക്ക'));
+    const buf = await service.generateBill(order('വെണ്ടയ്ക്ക'), UserLanguage.ML);
     expect(buf.subarray(0, 4).toString()).toBe('%PDF');
     expect(buf.toString('latin1')).toContain('NotoSansMalayalam');
   });
 
   it('does not crash shaping conjunct-heavy Malayalam', async () => {
     for (const name of ['മുരിങ്ങയ്ക്ക', 'വെണ്ടയ്ക്ക', 'കാബേജ്', 'പച്ചമുളക്']) {
-      const buf = await service.generateBill(order(name));
+      const buf = await service.generateBill(order(name), UserLanguage.ML);
       expect(buf.length).toBeGreaterThan(0);
     }
   });
 
   it('renders a mixed English/Malayalam name', async () => {
-    const buf = await service.generateBill(order('Spinach / ചീര'));
+    const buf = await service.generateBill(order('Spinach / ചീര'), UserLanguage.ML);
     expect(buf.subarray(0, 4).toString()).toBe('%PDF');
   });
 
@@ -107,27 +108,27 @@ describe('InvoiceService — Malayalam', () => {
    * shaped bill subsets the papamlym conjunct and never needs a bare virama.
    */
   it('forms the പ്പ conjunct when the name starts in English', async () => {
-    const subset = subsetGlyphNames(await service.generateBill(order('Banana വാഴപ്പഴം')));
+    const subset = subsetGlyphNames(await service.generateBill(order('Banana വാഴപ്പഴം'), UserLanguage.ML));
     expect(subset).toContain('papamlym');
     expect(subset).not.toContain('viramamlym');
   });
 
   it('shapes the Malayalam tail the same with or without a Latin prefix', async () => {
-    const mixed = subsetGlyphNames(await service.generateBill(order('Banana വാഴപ്പഴം')));
-    const pure = subsetGlyphNames(await service.generateBill(order('വാഴപ്പഴം')));
+    const mixed = subsetGlyphNames(await service.generateBill(order('Banana വാഴപ്പഴം'), UserLanguage.ML));
+    const pure = subsetGlyphNames(await service.generateBill(order('വാഴപ്പഴം'), UserLanguage.ML));
     const malayalam = (names: string[]) => names.filter((n) => n.endsWith('mlym')).sort();
     expect(malayalam(mixed)).toEqual(malayalam(pure));
   });
 
   it('renders the label, including its continued-text chain', async () => {
     const o = order('വെണ്ടയ്ക്ക');
-    const buf = await service.generateLabel(o.orderItems[0], o);
+    const buf = await service.generateLabel(o.orderItems[0], o, UserLanguage.ML);
     expect(buf.subarray(0, 4).toString()).toBe('%PDF');
     expect(buf.toString('latin1')).toContain('NotoSansMalayalam');
   });
 
   it('prints amounts with the rupee sign', async () => {
-    const buf = await service.generateBill(order('തക്കാളി'));
+    const buf = await service.generateBill(order('തക്കാളി'), UserLanguage.ML);
     expect(buf.subarray(0, 4).toString()).toBe('%PDF');
     expect((service as any).money(250)).toBe('₹ 250.00');
   });

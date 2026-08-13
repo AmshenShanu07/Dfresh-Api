@@ -1,3 +1,6 @@
+import { UserLanguage } from 'src/common/enums';
+import { LocalizedText, localize } from 'src/common/utils/localized-text';
+
 /** Bucket id for products whose category row is missing or unresolvable. */
 export const UNCATEGORIZED_ID = '__other__';
 export const UNCATEGORIZED_NAME = 'Other';
@@ -10,7 +13,7 @@ export const UNCATEGORIZED_NAME = 'Other';
 export interface SellableEntry {
   productId: string;
   product?: {
-    category?: { id?: string; name?: string } | null;
+    category?: { id?: string; name?: LocalizedText } | null;
   } | null;
 }
 
@@ -31,13 +34,16 @@ export interface CategoryRow {
  */
 export function groupEntriesByCategory(
   entries: SellableEntry[],
+  lang: UserLanguage,
 ): CategoryRow[] {
   const byCategory = new Map<string, { name: string; productIds: Set<string> }>();
 
   for (const entry of entries) {
     const category = entry.product?.category;
     const id = category?.id || UNCATEGORIZED_ID;
-    const name = (id === UNCATEGORIZED_ID ? '' : category?.name) || UNCATEGORIZED_NAME;
+    const name =
+      (id === UNCATEGORIZED_ID ? '' : localize(category?.name, lang)) ||
+      UNCATEGORIZED_NAME;
 
     let bucket = byCategory.get(id);
     if (!bucket) {
