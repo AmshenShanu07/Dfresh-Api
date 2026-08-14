@@ -97,6 +97,42 @@ describe('selectPaymentMethod only acts on a PENDING order', () => {
     expect(orderRepo.row!.paymentStatus).toBe(PaymentStatus.VERIFIED);
   });
 
+  it('locks a PENDING order that already has UPI selected: tapping COD does not switch it', async () => {
+    // Customer tapped UPI first → still PENDING, awaiting their screenshot.
+    // A stale/second tap on COD must not silently switch the payment method.
+    const { service, orderRepo } = buildService({
+      id: 'order-1',
+      status: OrderStatus.PENDING,
+      paymentStatus: PaymentStatus.AWAITING_SCREENSHOT,
+      paymentMethod: PaymentMethod.UPI,
+      totalAmount: 100,
+      stockDeducted: false,
+    });
+
+    const result = await service.selectPaymentMethod('order-1', PaymentMethod.COD);
+
+    expect(result.outcome).toBe('locked');
+    expect(orderRepo.row!.status).toBe(OrderStatus.PENDING);
+    expect(orderRepo.row!.paymentMethod).toBe(PaymentMethod.UPI);
+    expect(orderRepo.row!.paymentStatus).toBe(PaymentStatus.AWAITING_SCREENSHOT);
+  });
+
+  it('locks a PENDING order that already has UPI selected: re-tapping UPI again does not re-run it', async () => {
+    const { service, orderRepo } = buildService({
+      id: 'order-1',
+      status: OrderStatus.PENDING,
+      paymentStatus: PaymentStatus.AWAITING_SCREENSHOT,
+      paymentMethod: PaymentMethod.UPI,
+      totalAmount: 100,
+      stockDeducted: false,
+    });
+
+    const result = await service.selectPaymentMethod('order-1', PaymentMethod.UPI);
+
+    expect(result.outcome).toBe('locked');
+    expect(orderRepo.row!.paymentMethod).toBe(PaymentMethod.UPI);
+  });
+
   it('locks a CANCELLED order: a stale button tap cannot revive it', async () => {
     const { service, orderRepo } = buildService({
       id: 'order-1',

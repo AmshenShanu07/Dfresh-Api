@@ -1806,7 +1806,7 @@ export class WhatsappService {
     const addressText = this.messages.get('address.confirm', {
       name: address.name,
       address: address.address,
-      pinCode: address.pinCode,
+      landmark: address.landmark,
       phone: address.phone,
     });
 
@@ -1861,7 +1861,7 @@ export class WhatsappService {
       const order = await this.orderService.confirmOrderWithAddress(orderId, {
         name: address.name,
         address: address.address,
-        pinCode: address.pinCode,
+        landmark: address.landmark,
         phone: address.phone,
         wardId: address.wardId,
         areaId: address.areaId,
@@ -1889,7 +1889,7 @@ export class WhatsappService {
             userId: user.id,
             name: addressData.name,
             address: addressData.address,
-            pinCode: addressData.pincode,
+            landmark: addressData.landmark,
             phone: addressData.phone,
             wardId: wardId ?? null,
             areaId: areaId ?? null,
@@ -1962,10 +1962,16 @@ export class WhatsappService {
   /** The delivery address block shared by the order and COD confirmations. */
   private orderAddressBlock(deliveryDetails: any): string {
     if (!deliveryDetails) return this.messages.get('order.addressMissing');
+    // WhatsApp self-checkout orders carry a landmark; manual orders carry a
+    // pin code instead. At most one is populated for a given order.
+    const address = deliveryDetails.landmark
+      ? `${deliveryDetails.address} (${deliveryDetails.landmark})`
+      : deliveryDetails.pinCode
+        ? `${deliveryDetails.address}, ${deliveryDetails.pinCode}`
+        : deliveryDetails.address;
     return this.messages.get('order.addressBlock', {
       name: deliveryDetails.name,
-      address: deliveryDetails.address,
-      pinCode: deliveryDetails.pinCode,
+      address,
       phone: deliveryDetails.phone,
     });
   }
@@ -2150,16 +2156,20 @@ export class WhatsappService {
   }
 
   /**
-   * Sent when a customer taps a stale payment button on an order that is no
-   * longer PENDING (already CONFIRMED, or CANCELLED/expired). The order is left
+   * Sent when a customer taps a stale/second payment button on an order whose
+   * payment method is already locked in — either the order moved on
+   * (CONFIRMED, or CANCELLED/expired) or it's still PENDING but a method was
+   * already chosen (UPI, awaiting the screenshot). The order is left
    * untouched; this just explains why the tap did nothing.
    */
   private async sendOrderLockedMessage(phone: string, order: any) {
-    const body = this.messages.get(
+    const key =
       order?.status === OrderStatus.CANCELLED
         ? 'payment.lockedCancelled'
-        : 'payment.lockedConfirmed',
-    );
+        : order?.status === OrderStatus.PENDING
+          ? 'payment.lockedAwaitingScreenshot'
+          : 'payment.lockedConfirmed';
+    const body = this.messages.get(key);
 
     await this.waInstance.post('/messages', {
       messaging_product: 'whatsapp',

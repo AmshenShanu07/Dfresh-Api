@@ -174,7 +174,7 @@ export const MESSAGE_DEFAULTS: MessageTree = {
       'Please verify your delivery address:\n\n' +
       'Name: {{name}}\n' +
       'Address: {{address}}\n' +
-      'Pin Code: {{pinCode}}\n' +
+      'Landmark: {{landmark}}\n' +
       'Phone: {{phone}}\n\n' +
       'Is this correct?',
     buttonConfirm: 'Confirm Address',
@@ -204,6 +204,9 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     lockedCancelled:
       "This order is no longer active and can't be changed.\n\n" +
       'Please place a new order to continue.',
+    lockedAwaitingScreenshot:
+      "You've already selected UPI as your payment method. Please upload your payment screenshot to confirm the order.\n\n" +
+      'If you need any help, please contact support.',
     screenshotReceived:
       '✅ Thanks! Your payment screenshot has been received.\n\n' +
       "We'll verify the payment and confirm your order shortly.",
@@ -227,7 +230,7 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     addOnCleaning: 'Cleaning +₹{{charge}}',
     addOnCutting: 'Cutting +₹{{charge}}',
     addOnCuttingWithStyle: 'Cut {{style}} +₹{{charge}}',
-    addressBlock: '{{name}}\n{{address}}, {{pinCode}}\nPhone: {{phone}}',
+    addressBlock: '{{name}}\n{{address}}\nPhone: {{phone}}',
     addressMissing: 'Address not available',
     statusUpdate:
       '{{headline}}\n\n' +

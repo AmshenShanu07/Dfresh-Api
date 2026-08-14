@@ -69,7 +69,7 @@ export class UserAddress {
   address: string;
 
   @Column({ type: 'varchar', default: '' })
-  pinCode: string;
+  landmark: string;
 
   @Column({ type: 'varchar', default: '' })
   phone: string;

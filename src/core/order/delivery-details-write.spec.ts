@@ -64,7 +64,7 @@ describe('delivery details write is idempotent per order', () => {
   const addressData = {
     flow_token: 'order-1',
     address: '2nd address',
-    pincode: '682001',
+    landmark: 'Near the temple',
     phone: '9999999999',
     name: 'Test',
   };
@@ -90,7 +90,7 @@ describe('delivery details write is idempotent per order', () => {
     const addr = {
       name: 'Test',
       address: 'addr',
-      pinCode: '682001',
+      landmark: 'Near the temple',
       phone: '9999999999',
       wardId: null,
     };

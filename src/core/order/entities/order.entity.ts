@@ -166,8 +166,12 @@ export class DeliveryDetails {
   @Column({ type: 'varchar' })
   phone: string;
 
-  @Column({ type: 'varchar' })
+  @Column({ type: 'varchar', nullable: true })
   pinCode: string;
+
+  // Only WhatsApp self-checkout orders collect this (manual orders don't).
+  @Column({ type: 'varchar', nullable: true })
+  landmark: string;
 
   @Column({ type: 'varchar' })
   name: string;

@@ -67,7 +67,11 @@ export class InvoiceService {
         .font('NotoML')
         .fontSize(10)
         .text(customerName)
-        .text(d?.address ? `${d.address}${d.pinCode ? ', ' + d.pinCode : ''}` : '')
+        .text(
+          d?.address
+            ? `${d.address}${d.landmark ? ' (' + d.landmark + ')' : d.pinCode ? ', ' + d.pinCode : ''}`
+            : '',
+        )
         .text(customerPhone ? `Phone: ${customerPhone}` : '');
 
       const rightX = left + pageWidth / 2;

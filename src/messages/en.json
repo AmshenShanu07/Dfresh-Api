@@ -125,7 +125,7 @@
     "areaListMore": "View More Areas",
     "flowPrompt": "Please share your delivery address",
     "flowButton": "Enter Address",
-    "confirm": "Please verify your delivery address:\n\nName: {{name}}\nAddress: {{address}}\nPin Code: {{pinCode}}\nPhone: {{phone}}\n\nIs this correct?",
+    "confirm": "Please verify your delivery address:\n\nName: {{name}}\nAddress: {{address}}\nLandmark: {{landmark}}\nPhone: {{phone}}\n\nIs this correct?",
     "buttonConfirm": "Confirm Address",
     "buttonAddNew": "Add New Address"
   },
@@ -137,6 +137,7 @@
     "upiQrCaption": "Scan this QR Code to pay *₹{{amount}}*.\n\nAfter paying, *reply with the payment screenshot* in this to confirm your order",
     "lockedConfirmed": "✅ Your order is already confirmed and can't be changed.\n\nIf you need any help, please contact +91-75111 10094",
     "lockedCancelled": "This order is no longer active and can't be changed.\n\nPlace a new order to continue",
+    "lockedAwaitingScreenshot": "You've already selected UPI as your payment method. Please upload your payment screenshot to confirm the order.\n\nIf you need any help, please contact +91-75111 10094",
     "screenshotReceived": "✅ Thanks! Your payment screenshot has been received.\n\nWe'll verify the payment and confirm your order shortly.\n\nIf you need any help, please contact +91-75111 10094",
     "screenshotNoOrder": "We couldn't find a pending UPI payment from your number.\nPlease contact +91-75111 10094"
   },
@@ -150,7 +151,7 @@
     "addOnCleaning": "Cleaning +₹{{charge}}",
     "addOnCutting": "Cutting +₹{{charge}}",
     "addOnCuttingWithStyle": "Cut {{style}} +₹{{charge}}",
-    "addressBlock": "{{name}}\n{{address}}, {{pinCode}}\nPhone: {{phone}}",
+    "addressBlock": "{{name}}\n{{address}}\nPhone: {{phone}}",
     "addressMissing": "Address not available",
     "statusUpdate": "{{headline}}\n\nOrder *#{{orderNumber}}*\n*Total Amount: ₹{{totalAmount}}*\n{{agentBlock}}\n_Further order updates will be notified to you on WhatsApp._",
     "statusConfirmedHeadline": "✅ *Your order is confirmed!*",

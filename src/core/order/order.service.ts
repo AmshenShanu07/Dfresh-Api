@@ -37,9 +37,11 @@ export const UNASSIGNED_OUTLET = 'unassigned';
 
 /**
  * Result of {@link OrderService.selectPaymentMethod}.
- *  - `updated`  — the PENDING order accepted the method (order returned).
- *  - `locked`   — the order is no longer PENDING (CONFIRMED/CANCELLED/…), so
- *                 the payment method was left untouched.
+ *  - `updated`  — the PENDING order had no payment method yet and accepted
+ *                 this one (order returned).
+ *  - `locked`   — the order already has a payment method, or is no longer
+ *                 PENDING (CONFIRMED/CANCELLED/…), so the tap was ignored and
+ *                 the order was left untouched.
  *  - `not_found`— no order with that id.
  */
 export type SelectPaymentResult =
@@ -594,7 +596,13 @@ export class OrderService {
    */
   private async writeDeliveryDetails(
     orderId: string,
-    data: { address: string; pinCode: string; phone: string; name: string },
+    data: {
+      address: string;
+      pinCode?: string;
+      landmark?: string;
+      phone: string;
+      name: string;
+    },
   ) {
     await this.deliveryDetailsRepository.upsert(
       { orderId, ...data },
@@ -621,7 +629,7 @@ export class OrderService {
     try {
       await this.writeDeliveryDetails(addressData.flow_token, {
         address: addressData.address,
-        pinCode: addressData.pincode,
+        landmark: addressData.landmark,
         phone: addressData.phone,
         name: addressData.name,
       });
@@ -655,7 +663,7 @@ export class OrderService {
     address: {
       name: string;
       address: string;
-      pinCode: string;
+      landmark: string;
       phone: string;
       wardId?: string | null;
       areaId?: string | null;
@@ -664,7 +672,7 @@ export class OrderService {
     try {
       await this.writeDeliveryDetails(orderId, {
         address: address.address,
-        pinCode: address.pinCode,
+        landmark: address.landmark,
         phone: address.phone,
         name: address.name,
       });
@@ -712,7 +720,10 @@ export class OrderService {
       where: { id: orderId },
     });
     if (!existing) return { outcome: 'not_found' };
-    if (existing.status !== OrderStatus.PENDING) {
+    // A payment method, once chosen, is final — even while the order is
+    // still PENDING (e.g. UPI selected and awaiting the screenshot). Without
+    // this, a stale/second button tap could silently switch COD <-> UPI.
+    if (existing.status !== OrderStatus.PENDING || existing.paymentMethod !== null) {
       return { outcome: 'locked', order: existing };
     }
 

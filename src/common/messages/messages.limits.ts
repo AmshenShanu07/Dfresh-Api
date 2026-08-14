@@ -132,6 +132,7 @@ export const MESSAGE_LIMITS: Record<string, FieldKind> = {
   'payment.upiQrCaption': 'body',
   'payment.lockedConfirmed': 'body',
   'payment.lockedCancelled': 'body',
+  'payment.lockedAwaitingScreenshot': 'body',
   'payment.screenshotReceived': 'body',
   'payment.screenshotNoOrder': 'body',
 
