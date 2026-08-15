@@ -78,7 +78,7 @@ export class UsersService {
     }
 
     const token = await this.jwtService.sign(
-      { id: isExist.id, phone: isExist.phone },
+      { id: isExist.id, phone: isExist.phone, userType: isExist.userType },
       { secret: 'dfresh' },
     );
 
