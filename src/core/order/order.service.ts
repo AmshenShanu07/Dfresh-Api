@@ -630,6 +630,7 @@ export class OrderService {
       await this.writeDeliveryDetails(addressData.flow_token, {
         address: addressData.address,
         landmark: addressData.landmark,
+        pinCode: addressData.pinCode,
         phone: addressData.phone,
         name: addressData.name,
       });
@@ -664,6 +665,7 @@ export class OrderService {
       name: string;
       address: string;
       landmark: string;
+      pinCode?: string;
       phone: string;
       wardId?: string | null;
       areaId?: string | null;
@@ -673,6 +675,7 @@ export class OrderService {
       await this.writeDeliveryDetails(orderId, {
         address: address.address,
         landmark: address.landmark,
+        pinCode: address.pinCode,
         phone: address.phone,
         name: address.name,
       });

@@ -72,6 +72,9 @@ export class UserAddress {
   landmark: string;
 
   @Column({ type: 'varchar', default: '' })
+  pinCode: string;
+
+  @Column({ type: 'varchar', default: '' })
   phone: string;
 
   @Column({ type: 'varchar', nullable: true, default: null })

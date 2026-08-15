@@ -69,7 +69,7 @@ export class InvoiceService {
         .text(customerName)
         .text(
           d?.address
-            ? `${d.address}${d.landmark ? ' (' + d.landmark + ')' : d.pinCode ? ', ' + d.pinCode : ''}`
+            ? `${d.address}${d.landmark ? ' (' + d.landmark + ')' : ''}${d.pinCode ? ', ' + d.pinCode : ''}`
             : '',
         )
         .text(customerPhone ? `Phone: ${customerPhone}` : '');

@@ -125,7 +125,7 @@
     "areaListMore": "View More Areas",
     "flowPrompt": "Please share your delivery address",
     "flowButton": "Enter Address",
-    "confirm": "Please verify your delivery address:\n\nName: {{name}}\nAddress: {{address}}\nLandmark: {{landmark}}\nPhone: {{phone}}\n\nIs this correct?",
+    "confirm": "Please verify your delivery address:\n\nName: {{name}}\nAddress: {{address}}\nLandmark: {{landmark}}\nPincode: {{pincode}}\nPhone: {{phone}}\n\nIs this correct?",
     "buttonConfirm": "Confirm Address",
     "buttonAddNew": "Add New Address"
   },

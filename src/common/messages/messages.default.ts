@@ -175,6 +175,7 @@ export const MESSAGE_DEFAULTS: MessageTree = {
       'Name: {{name}}\n' +
       'Address: {{address}}\n' +
       'Landmark: {{landmark}}\n' +
+      'Pincode: {{pincode}}\n' +
       'Phone: {{phone}}\n\n' +
       'Is this correct?',
     buttonConfirm: 'Confirm Address',

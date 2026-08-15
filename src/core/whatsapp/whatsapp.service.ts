@@ -1807,6 +1807,7 @@ export class WhatsappService {
       name: address.name,
       address: address.address,
       landmark: address.landmark,
+      pincode: address.pinCode,
       phone: address.phone,
     });
 
@@ -1862,6 +1863,7 @@ export class WhatsappService {
         name: address.name,
         address: address.address,
         landmark: address.landmark,
+        pinCode: address.pinCode,
         phone: address.phone,
         wardId: address.wardId,
         areaId: address.areaId,
@@ -1882,6 +1884,20 @@ export class WhatsappService {
         addressData.flow_token,
       );
 
+      // The Flow field itself is untyped/unvalidated on submit, so a 6-digit
+      // PIN code (matching the manual-order convention) is enforced here.
+      // Invalid input is dropped rather than rejecting the whole address —
+      // there's no channel to bounce the customer back into the Flow to fix
+      // it, and stalling checkout on this would be worse than a blank field.
+      const rawPinCode =
+        typeof addressData.pincode === 'string'
+          ? addressData.pincode.trim()
+          : '';
+      const pinCode = /^\d{6}$/.test(rawPinCode) ? rawPinCode : '';
+      if (rawPinCode && !pinCode) {
+        console.warn('Received invalid pincode from WhatsApp flow:', rawPinCode);
+      }
+
       const user = await this.userRepository.findOne({ where: { phone } });
       if (user) {
         await this.userAddressRepository.save(
@@ -1890,6 +1906,7 @@ export class WhatsappService {
             name: addressData.name,
             address: addressData.address,
             landmark: addressData.landmark,
+            pinCode,
             phone: addressData.phone,
             wardId: wardId ?? null,
             areaId: areaId ?? null,
@@ -1906,6 +1923,7 @@ export class WhatsappService {
         // order id).
         addressData.wardId = wardId ?? null;
         addressData.areaId = areaId ?? null;
+        addressData.pinCode = pinCode;
         const order = await this.orderService.updateOrderAddress(addressData);
         if (order) {
           await this.sendPaymentMethodButtons(phone, order.id, order.totalAmount);
@@ -1962,13 +1980,9 @@ export class WhatsappService {
   /** The delivery address block shared by the order and COD confirmations. */
   private orderAddressBlock(deliveryDetails: any): string {
     if (!deliveryDetails) return this.messages.get('order.addressMissing');
-    // WhatsApp self-checkout orders carry a landmark; manual orders carry a
-    // pin code instead. At most one is populated for a given order.
-    const address = deliveryDetails.landmark
-      ? `${deliveryDetails.address} (${deliveryDetails.landmark})`
-      : deliveryDetails.pinCode
-        ? `${deliveryDetails.address}, ${deliveryDetails.pinCode}`
-        : deliveryDetails.address;
+    const address = `${deliveryDetails.address}${
+      deliveryDetails.landmark ? ` (${deliveryDetails.landmark})` : ''
+    }${deliveryDetails.pinCode ? `, ${deliveryDetails.pinCode}` : ''}`;
     return this.messages.get('order.addressBlock', {
       name: deliveryDetails.name,
       address,
