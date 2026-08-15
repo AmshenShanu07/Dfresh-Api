@@ -19,9 +19,10 @@ import { WardModule } from '../ward/ward.module';
 import { AreaModule } from '../area/area.module';
 import { Staff } from '../users/entities/staff.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
+import { OutletStockModule } from '../outlet-stock/outlet-stock.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, UserAddress, Products, ProductVariant, OrderDetails, OrderItems, DeliveryDetails, Category, ShareCatalog, ShareCatalogProducts, ShareCatalogProductStock, Cart, CartItem, Staff, Outlets]), WardModule, AreaModule],
+  imports: [TypeOrmModule.forFeature([User, UserAddress, Products, ProductVariant, OrderDetails, OrderItems, DeliveryDetails, Category, ShareCatalog, ShareCatalogProducts, ShareCatalogProductStock, Cart, CartItem, Staff, Outlets]), WardModule, AreaModule, OutletStockModule],
   controllers: [WhatsappController],
   providers: [WhatsappService, OrderService, UploadService, CartService, InvoiceService],
   exports: [WhatsappService],

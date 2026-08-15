@@ -15,6 +15,7 @@ import { Outlets } from '../outlet/entities/outlet.entity';
 import { JwtService } from '@nestjs/jwt';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { AreaModule } from '../area/area.module';
+import { OutletStockModule } from '../outlet-stock/outlet-stock.module';
 import { OrderExpiryCronService } from './order-expiry.cron';
 import { InvoiceService } from './invoice.service';
 import { ManualOrderService } from './manual-order.service';
@@ -37,6 +38,7 @@ import { ManualOrderService } from './manual-order.service';
     ]),
     WhatsappModule,
     AreaModule,
+    OutletStockModule,
   ],
   controllers: [OrderController],
   providers: [

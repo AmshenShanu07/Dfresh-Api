@@ -56,6 +56,7 @@ function buildService() {
     {} as any, // outlets
     {} as any, // staff
     {} as any, // areaService
+    {} as any, // outletStockService
   );
   return { service, deliveryRepo };
 }

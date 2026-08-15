@@ -23,11 +23,13 @@ import { AreaModule } from '../area/area.module';
 import { Staff } from '../users/entities/staff.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
 import { Catalog } from '../catlog/entities/catalog.entity';
+import { OutletStockModule } from '../outlet-stock/outlet-stock.module';
 
 @Module({
   imports: [
     WardModule,
     AreaModule,
+    OutletStockModule,
     TypeOrmModule.forFeature([
       ShareCatalog,
       ShareCatalogProducts,

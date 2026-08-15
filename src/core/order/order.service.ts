@@ -19,6 +19,7 @@ import {
   UserTypes,
 } from 'src/common/enums';
 import { AreaService } from '../area/area.service';
+import { OutletStockService } from '../outlet-stock/outlet-stock.service';
 import {
   isRangeKey,
   resolveCustomRange,
@@ -73,6 +74,7 @@ export class OrderService {
     @InjectRepository(Staff)
     private readonly staffRepository: Repository<Staff>,
     private readonly areaService: AreaService,
+    private readonly outletStockService: OutletStockService,
   ) {}
 
   /**
@@ -92,6 +94,13 @@ export class OrderService {
 
     // Mark first to guard against concurrent/duplicate confirmations.
     await this.orderDetailsRepository.update(orderId, { stockDeducted: true });
+
+    // Resolve once and persist, so a later restoreStock credits the same
+    // outlet even if the order's ward/area or the outlet layout changes.
+    const outletId = await this.resolveFulfillingOutletId(order);
+    if (outletId) {
+      await this.orderDetailsRepository.update(orderId, { outletId });
+    }
 
     const live = await this.shareCatalogRepository.findOne({
       where: { status: ShareCatalogStatus.LIVE, isDeleted: false },
@@ -118,6 +127,16 @@ export class OrderService {
         .where('id = :id', { id: item.productId })
         .setParameters({ grams })
         .execute();
+
+      // Outlet-level ledger: no floor, deliberately allowed to go negative
+      // (system-driven consumption, unlike an admin-initiated transfer).
+      if (outletId) {
+        await this.outletStockService.applyOrderConsumption(
+          outletId,
+          item.productId,
+          grams,
+        );
+      }
 
       if (live) {
         const stock = (live.ShareCatalogProductStock ?? []).find(
@@ -207,6 +226,16 @@ export class OrderService {
         'totalQuantity',
         grams,
       );
+
+      // Credit back the outlet resolved (and persisted) at deduction time —
+      // never re-derived, so a later ward/outlet change can't misattribute it.
+      if (order.outletId) {
+        await this.outletStockService.restoreOrderConsumption(
+          order.outletId,
+          item.productId,
+          grams,
+        );
+      }
 
       if (catalog) {
         const stock = (catalog.ShareCatalogProductStock ?? []).find(
@@ -472,30 +501,53 @@ export class OrderService {
   }
 
   /**
-   * Resolves the delivery agents available for an order. The order's outlet is
-   * derived from the customer's selected ward: the first outlet serving that
-   * ward (Outlets.wardId). Agents are the outlet's Staff whose user is an
-   * OUTLET_AGENT. Returns the resolved outletId (null when none) and the
-   * agent list ([] when the ward maps to no outlet or the outlet has none).
+   * Resolves the outlet that fulfills an order: the area's owning outlet
+   * (Area.outletId) when the order has an areaId, else the first outlet
+   * serving the order's ward (Outlets.wardId) — the same "oldest outlet"
+   * fallback used before areas existed. Null when neither resolves (no ward
+   * captured, or the ward maps to no outlet). Two outlets sharing a ward with
+   * no area selected are still indistinguishable here — that ambiguity is
+   * unchanged by this helper, only the resolution point is now shared.
    */
-  async getDeliveryAgentsForOrder(orderId: string) {
-    const order = await this.orderDetailsRepository.findOne({
-      where: { id: orderId },
-    });
-    if (!order || !order.wardId) {
-      return { outletId: null, agents: [] };
+  private async resolveFulfillingOutletId(order: {
+    areaId?: string | null;
+    wardId?: string | null;
+  }): Promise<string | null> {
+    if (order.areaId) {
+      const area = await this.areaService.findOneActive(order.areaId);
+      if (area?.outletId) return area.outletId;
     }
+    if (!order.wardId) return null;
 
     const outlet = await this.outletRepository.findOne({
       where: { wardId: order.wardId, isDeleted: false },
       order: { createdAt: 'ASC' },
     });
-    if (!outlet) {
+    return outlet?.id ?? null;
+  }
+
+  /**
+   * Resolves the delivery agents available for an order, via the order's
+   * fulfilling outlet (see resolveFulfillingOutletId). Agents are the
+   * outlet's Staff whose user is an OUTLET_AGENT. Returns the resolved
+   * outletId (null when none) and the agent list ([] when no outlet resolves
+   * or the outlet has none).
+   */
+  async getDeliveryAgentsForOrder(orderId: string) {
+    const order = await this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+    });
+    if (!order) {
+      return { outletId: null, agents: [] };
+    }
+
+    const outletId = await this.resolveFulfillingOutletId(order);
+    if (!outletId) {
       return { outletId: null, agents: [] };
     }
 
     const staff = await this.staffRepository.find({
-      where: { outletId: outlet.id, isDeleted: false },
+      where: { outletId, isDeleted: false },
       relations: { user: true },
     });
 
@@ -507,7 +559,7 @@ export class OrderService {
         phone: s.user.phone,
       }));
 
-    return { outletId: outlet.id, agents };
+    return { outletId, agents };
   }
 
   async confirmOrder(id: string) {

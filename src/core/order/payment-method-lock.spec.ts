@@ -54,6 +54,7 @@ function buildService(row: Partial<OrderDetails> | null) {
     {} as any, // outlets
     {} as any, // staff
     {} as any, // areaService
+    {} as any, // outletStockService
   );
   return { service, orderRepo };
 }

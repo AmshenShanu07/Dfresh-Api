@@ -10,6 +10,7 @@ import { ProductFilterDto } from './dto/filter-list.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, In, Raw, Repository } from 'typeorm';
 import { likeContains } from 'src/common/utils/search';
+import { quoteRawAlias } from 'src/common/utils/localized-text';
 import { Products } from './entities/product.entity';
 import {
   ProductVariant,
@@ -448,7 +449,8 @@ export class ProductService {
       // `name` is jsonb — Postgres has no ILIKE for jsonb, so match against
       // the English/Malayalam text inside it instead of the column directly.
       where.name = Raw(
-        (alias) => `(${alias}->>'en' ILIKE :search OR ${alias}->>'ml' ILIKE :search)`,
+        (alias) =>
+          `(${quoteRawAlias(alias)}->>'en' ILIKE :search OR ${quoteRawAlias(alias)}->>'ml' ILIKE :search)`,
         { search: likeContains(filter.search) },
       );
     }

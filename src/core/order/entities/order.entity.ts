@@ -64,6 +64,17 @@ export class OrderDetails {
   @Column({ type: 'varchar', nullable: true })
   areaId: string | null;
 
+  // The outlet whose stock was actually deducted for this order, resolved
+  // once by resolveFulfillingOutletId (Area.outletId when an area was
+  // selected, else the same "oldest outlet for the ward" fallback dispatch
+  // uses) and persisted at the point stock is first deducted. Read back
+  // (never re-derived) by restoreStock so a later ward/outlet change can't
+  // misattribute a cancellation credit. Null when no outlet could be
+  // resolved (ward maps to no outlet) — outlet-level stock is skipped for
+  // that order, same as before this column existed.
+  @Column({ type: 'varchar', nullable: true })
+  outletId: string | null;
+
   // The delivery agent (a User with userType OUTLET_AGENT) assigned to
   // deliver this order. Auto-set from the order's Area when one is present;
   // otherwise required before the order can move to DISPATCHED.

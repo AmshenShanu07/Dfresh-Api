@@ -10,6 +10,7 @@ import { Products } from '../product/entities/product.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
 import { User } from '../users/entities/user.entity';
 import { toBase } from 'src/common/utils/units';
+import { OutletStockService } from '../outlet-stock/outlet-stock.service';
 
 @Injectable()
 export class PurchaseService {
@@ -22,6 +23,7 @@ export class PurchaseService {
     private readonly outletRepository: Repository<Outlets>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly outletStockService: OutletStockService,
   ) {}
 
   async create(createPurchaseDto: CreatePurchaseDto) {
@@ -47,10 +49,21 @@ export class PurchaseService {
       }),
     );
 
+    const baseQty = toBase(
+      createPurchaseDto.quantity,
+      createPurchaseDto.quantityUnit,
+    );
+
     await this.productRepository.increment(
       { id: createPurchaseDto.productId },
       'totalQuantity',
-      toBase(createPurchaseDto.quantity, createPurchaseDto.quantityUnit),
+      baseQty,
+    );
+
+    await this.outletStockService.applyPurchaseIn(
+      createPurchaseDto.outletId,
+      createPurchaseDto.productId,
+      baseQty,
     );
 
     return purchase;

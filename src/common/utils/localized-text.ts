@@ -20,3 +20,20 @@ export function localize(
 ): string {
   return text?.[lang] || text?.en || '';
 }
+
+/**
+ * TypeORM's `Raw()` operator, used in object-style `where` filters (e.g.
+ * `repository.find({ where: { name: Raw(alias => ...) } })`), hands the
+ * callback an unquoted `EntityAlias.propertyName` path — not a ready-to-use
+ * SQL reference. Interpolating it straight into a template literal lets
+ * Postgres case-fold the (case-sensitive) entity alias to lowercase, which
+ * then can't be found in the FROM clause TypeORM actually generated
+ * ("missing FROM-clause entry for table ..."). Quote each segment so it
+ * matches.
+ */
+export function quoteRawAlias(aliasPath: string): string {
+  return aliasPath
+    .split('.')
+    .map((part) => `"${part}"`)
+    .join('.');
+}

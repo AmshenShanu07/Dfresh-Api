@@ -9,10 +9,11 @@ import { CuttingStyle } from './entities/cutting-style.entity';
 import { CreateCuttingStyleDto } from './dto/create-cutting-style.dto';
 import { UpdateCuttingStyleDto } from './dto/update-cutting-style.dto';
 import { CuttingStyleFilterDto } from './dto/filter-list.dto';
+import { quoteRawAlias } from '../../common/utils/localized-text';
 
 /** Case-insensitive duplicate check against the English name — the identity a dashboard admin actually types against. */
 function byEnglishName(name: string) {
-  return Raw((alias) => `${alias}->>'en' ILIKE :name`, { name });
+  return Raw((alias) => `${quoteRawAlias(alias)}->>'en' ILIKE :name`, { name });
 }
 
 @Injectable()

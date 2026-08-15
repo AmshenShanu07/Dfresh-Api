@@ -6,6 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Raw, Repository } from 'typeorm';
 import { Category } from './entities/category.entity';
 import { likeContains } from 'src/common/utils/search';
+import { quoteRawAlias } from 'src/common/utils/localized-text';
 
 @Injectable()
 export class CategoryService {
@@ -77,7 +78,8 @@ export class CategoryService {
       // `name` is jsonb — Postgres has no ILIKE for jsonb, so match against
       // the English/Malayalam text inside it instead of the column directly.
       where.name = Raw(
-        (alias) => `(${alias}->>'en' ILIKE :search OR ${alias}->>'ml' ILIKE :search)`,
+        (alias) =>
+          `(${quoteRawAlias(alias)}->>'en' ILIKE :search OR ${quoteRawAlias(alias)}->>'ml' ILIKE :search)`,
         { search: likeContains(filter.search) },
       );
     }
