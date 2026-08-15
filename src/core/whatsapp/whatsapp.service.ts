@@ -2069,6 +2069,17 @@ export class WhatsappService {
     });
   }
 
+  /**
+   * Sends the delivery-confirmation OTP to the customer. Triggered by a
+   * delivery agent tapping "Send OTP" on the Order Dispatch detail page.
+   */
+  async sendDeliveryOtpMessage(phone: string, otp: string, orderNumber: string) {
+    await this.withCustomerLanguage(phone, async () => {
+      const body = this.messages.get('delivery.otp', { otp, orderNumber });
+      await this.sendText(phone, body);
+    });
+  }
+
   private async sendPaymentMethodButtons(
     phone: string,
     orderId: string,

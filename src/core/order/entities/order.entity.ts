@@ -88,6 +88,26 @@ export class OrderDetails {
   @Column({ type: 'timestamp', nullable: true })
   billSentAt: Date | null;
 
+  // Delivery confirmation OTP, generated once (by every CONFIRMED-transition
+  // path) and never regenerated. Verified by the delivery agent to move the
+  // order to DELIVERED. Also surfaced to admins on the order detail page as a
+  // fallback if the WhatsApp OTP message doesn't reach the customer.
+  @Column({ type: 'varchar', nullable: true })
+  deliveryOtp: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  deliveryOtpGeneratedAt: Date | null;
+
+  // Last time the OTP was successfully sent over WhatsApp; null until the
+  // agent's first "Send OTP" click, refreshed on each resend.
+  @Column({ type: 'timestamp', nullable: true })
+  deliveryOtpSentAt: Date | null;
+
+  // Set when the delivery agent's OTP entry matches deliveryOtp and the order
+  // moves to DELIVERED. Null until then.
+  @Column({ type: 'timestamp', nullable: true })
+  deliveredAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

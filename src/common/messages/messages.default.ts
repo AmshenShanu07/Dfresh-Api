@@ -246,6 +246,12 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     billCaption: '🧾 Your Daily Fresh bill for order {{orderNumber}}.',
   },
 
+  delivery: {
+    otp:
+      '🔐 Your Daily Fresh delivery OTP for order *#{{orderNumber}}* is *{{otp}}*.\n\n' +
+      'Share this with the delivery agent to confirm you received your order.',
+  },
+
   availability: {
     outOfStock:
       'All products are currently out of stock. Please try again after some time.',

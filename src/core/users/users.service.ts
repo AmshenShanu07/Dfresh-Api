@@ -69,19 +69,18 @@ export class UsersService {
     });
 
     if (isExist === null) {
-      return new UnauthorizedException('User not found');
+      throw new UnauthorizedException('User not found');
     }
-    console.log(isExist.password, data);
     const comparePswd = await bcrypt.compare(data.password, isExist.password);
+
+    if (!comparePswd) {
+      throw new UnauthorizedException('Password not match');
+    }
 
     const token = await this.jwtService.sign(
       { id: isExist.id, phone: isExist.phone },
       { secret: 'dfresh' },
     );
-
-    if (!comparePswd) {
-      return new UnauthorizedException('Password not match');
-    }
 
     const user = { ...isExist };
     delete user.password;
@@ -274,14 +273,17 @@ export class UsersService {
       }
     }
 
-    // Explicit field picks — the password is deliberately left alone so the
-    // existing hash survives an edit.
+    // Explicit field picks. The password is only touched when the admin
+    // explicitly supplies a new one — otherwise the existing hash survives.
     await this.userRepository.update(id, {
       name: data.name ?? user.name,
       phone: data.phone ?? user.phone,
       userType: data.userType ?? user.userType,
       address: data.address ?? user.address,
       email: data.email ?? user.email,
+      ...(data.password
+        ? { password: await bcrypt.hash(data.password, 10) }
+        : {}),
     });
 
     await this.syncStaffOutlet(

@@ -20,4 +20,12 @@ class BaseStaffDto extends PartialType(CreateUserDto) {
   areas?: AreaItemDto[];
 }
 
-export class CreateStaffDto extends PartialType(BaseStaffDto) {}
+export class CreateStaffDto extends PartialType(BaseStaffDto) {
+  // Overrides the optional password inherited through the double PartialType
+  // chain (BaseStaffDto -> CreateUserDto) -- staff creation always requires
+  // an admin-supplied password, it's never auto-generated.
+  @ApiProperty({ example: '' })
+  @IsNotEmpty()
+  @IsString()
+  password: string;
+}

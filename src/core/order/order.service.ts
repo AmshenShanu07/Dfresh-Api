@@ -6,7 +6,7 @@ import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.enti
 import { User } from '../users/entities/user.entity';
 import { Staff } from '../users/entities/staff.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ProductVariant } from '../product/entities/product-variant.entity';
 import { Products } from '../product/entities/product.entity';
 import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
@@ -381,6 +381,7 @@ export class OrderService {
     to?: string;
     outletId?: string;
     search?: string;
+    deliveryAgentId?: string;
   }) {
     // `?? default` is not enough here — an absent numeric @Query arrives as
     // NaN, which is not nullish. See positiveIntOr's comment for the full trap.
@@ -389,6 +390,7 @@ export class OrderService {
 
     const base: FindOptionsWhere<OrderDetails> = {};
     if (filter.status) base.status = filter.status as OrderStatus;
+    if (filter.deliveryAgentId) base.deliveryAgentId = filter.deliveryAgentId;
 
     // Explicit from/to wins over the preset; both go through the IST-aware
     // helpers rather than `new Date(...)`, which would read a yyyy-MM-dd
@@ -562,9 +564,32 @@ export class OrderService {
     return { outletId, agents };
   }
 
+  /**
+   * Generates and stores this order's delivery-confirmation OTP the first
+   * time it's called for a given order; a no-op afterwards. Called from every
+   * CONFIRMED-transition path so the code exists as soon as an order is
+   * confirmed, regardless of which path got it there — a retried/duplicate
+   * confirm on an already-CONFIRMED order must not rotate a code that may
+   * already have been read out to the customer.
+   */
+  private async ensureDeliveryOtp(orderId: string) {
+    const existing = await this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+      select: { id: true, deliveryOtp: true },
+    });
+    if (existing?.deliveryOtp) return;
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await this.orderDetailsRepository.update(orderId, {
+      deliveryOtp: otp,
+      deliveryOtpGeneratedAt: new Date(),
+    });
+  }
+
   async confirmOrder(id: string) {
     await this.orderDetailsRepository.update(id, { status: OrderStatus.CONFIRMED });
     await this.applyStockDeduction(id);
+    await this.ensureDeliveryOtp(id);
     return { success: true };
   }
 
@@ -631,6 +656,7 @@ export class OrderService {
       await this.orderDetailsRepository.update(id, { status: dto.status });
       if (dto.status === OrderStatus.CONFIRMED) {
         await this.applyStockDeduction(id);
+        await this.ensureDeliveryOtp(id);
       }
     }
 
@@ -794,6 +820,7 @@ export class OrderService {
 
     if (updates.status === OrderStatus.CONFIRMED) {
       await this.applyStockDeduction(orderId);
+      await this.ensureDeliveryOtp(orderId);
     }
 
     const order = await this.orderDetailsRepository.findOne({
@@ -845,6 +872,7 @@ export class OrderService {
     });
 
     await this.applyStockDeduction(orderId);
+    await this.ensureDeliveryOtp(orderId);
 
     return this.orderDetailsRepository.findOne({
       where: { id: orderId },
@@ -854,5 +882,78 @@ export class OrderService {
         user: true,
       },
     });
+  }
+
+  /**
+   * Validates that `requestingUser` may act on this order's delivery OTP —
+   * either they're the assigned delivery agent, or an ADMIN acting as a
+   * support fallback — and that the order is still CONFIRMED (not already
+   * DELIVERED/CANCELLED). Returns the order with the relations the caller
+   * needs to send the OTP (customer phone, order number derivation).
+   */
+  private async loadOrderForDeliveryOtp(
+    orderId: string,
+    requestingUser: { id: string; userType: UserTypes },
+  ) {
+    const order = await this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+      relations: { user: true, deliveryDetails: true },
+    });
+    if (!order) throw new BadRequestException('Order not found');
+    if (order.status !== OrderStatus.CONFIRMED) {
+      throw new BadRequestException(
+        'Order must be CONFIRMED to send or verify a delivery OTP',
+      );
+    }
+    const isOwningAgent = order.deliveryAgentId === requestingUser.id;
+    const isAdmin = requestingUser.userType === UserTypes.ADMIN;
+    if (!isOwningAgent && !isAdmin) {
+      throw new ForbiddenException(
+        'You are not the delivery agent assigned to this order',
+      );
+    }
+    return order;
+  }
+
+  /**
+   * Loads the order for an OTP send, generating the code on the fly as a
+   * fallback for orders confirmed before this feature existed (deliveryOtp
+   * would otherwise be null forever).
+   */
+  async getOrderForDeliveryOtp(
+    orderId: string,
+    requestingUser: { id: string; userType: UserTypes },
+  ) {
+    const order = await this.loadOrderForDeliveryOtp(orderId, requestingUser);
+    if (!order.deliveryOtp) {
+      await this.ensureDeliveryOtp(orderId);
+      return this.loadOrderForDeliveryOtp(orderId, requestingUser);
+    }
+    return order;
+  }
+
+  async markDeliveryOtpSent(orderId: string) {
+    await this.orderDetailsRepository.update(orderId, {
+      deliveryOtpSentAt: new Date(),
+    });
+  }
+
+  async verifyDeliveryOtp(
+    orderId: string,
+    requestingUser: { id: string; userType: UserTypes },
+    code: string,
+  ) {
+    const order = await this.loadOrderForDeliveryOtp(orderId, requestingUser);
+
+    if (!order.deliveryOtp || order.deliveryOtp !== code?.trim()) {
+      return { success: false, message: 'Incorrect OTP' };
+    }
+
+    await this.orderDetailsRepository.update(orderId, {
+      status: OrderStatus.DELIVERED,
+      deliveredAt: new Date(),
+    });
+
+    return { success: true, order: await this.findOne(orderId) };
   }
 }

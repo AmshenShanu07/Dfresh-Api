@@ -7,20 +7,24 @@ import {
   Param,
   Query,
   Body,
+  Req,
   UseGuards,
   Res,
   StreamableFile,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { OrderService } from './order.service';
 import { ManualOrderService } from './manual-order.service';
 import { InvoiceService } from './invoice.service';
 import { UserAuthGuard } from 'src/guards/user.guard';
+import { RolesGuard } from 'src/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { UpdateOrderDetailsDto } from './dto/update-order-details.dto';
 import { CreateManualOrderDto } from './dto/create-manual-order.dto';
-import { OrderStatus, UserLanguage } from 'src/common/enums';
+import { OrderStatus, UserLanguage, UserTypes } from 'src/common/enums';
 import { deriveOrderNumber } from './order-number.util';
 
 @Controller('order')
@@ -55,6 +59,7 @@ export class OrderController {
     @Query('to') to: string,
     @Query('outletId') outletId: string,
     @Query('search') search: string,
+    @Query('deliveryAgentId') deliveryAgentId: string,
   ) {
     return this.orderService.findAll({
       pageNumber,
@@ -65,6 +70,7 @@ export class OrderController {
       to,
       outletId,
       search,
+      deliveryAgentId,
     });
   }
 
@@ -213,5 +219,45 @@ export class OrderController {
     }
 
     return order;
+  }
+
+  /**
+   * Sends (or resends) the delivery-confirmation OTP to the customer over
+   * WhatsApp. Only the order's assigned delivery agent or an ADMIN may
+   * trigger this. The OTP value itself never appears in this response.
+   */
+  @Roles(UserTypes.OUTLET_AGENT, UserTypes.ADMIN)
+  @UseGuards(RolesGuard)
+  @Post(':id/send-delivery-otp')
+  async sendDeliveryOtp(@Param('id') id: string, @Req() req: any) {
+    const order = await this.orderService.getOrderForDeliveryOtp(id, req.user);
+    const customerPhone = order.user?.phone ?? order.deliveryDetails?.phone;
+    if (!customerPhone) {
+      throw new BadRequestException(
+        'No phone number on file for this customer',
+      );
+    }
+    await this.whatsappService.sendDeliveryOtpMessage(
+      customerPhone,
+      order.deliveryOtp,
+      deriveOrderNumber(order),
+    );
+    await this.orderService.markDeliveryOtpSent(id);
+    return { success: true };
+  }
+
+  /**
+   * Verifies the delivery agent's OTP entry and, on a match, moves the order
+   * to DELIVERED. This is the only path in the app that sets DELIVERED.
+   */
+  @Roles(UserTypes.OUTLET_AGENT, UserTypes.ADMIN)
+  @UseGuards(RolesGuard)
+  @Post(':id/verify-delivery-otp')
+  verifyDeliveryOtp(
+    @Param('id') id: string,
+    @Body('code') code: string,
+    @Req() req: any,
+  ) {
+    return this.orderService.verifyDeliveryOtp(id, req.user, code);
   }
 }
