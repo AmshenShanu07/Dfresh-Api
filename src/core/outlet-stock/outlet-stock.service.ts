@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { OutletProductStock } from './entities/outlet-product-stock.entity';
 import { StockTransfer } from './entities/stock-transfer.entity';
 import { Products } from '../product/entities/product.entity';
@@ -145,6 +145,21 @@ export class OutletStockService {
     await this.upsertDelta(outletId, productId, baseQty);
   }
 
+  /**
+   * Editing a purchase after the fact: applies a signed delta (positive or
+   * negative) to correct a quantity/product/outlet mistake. Pass `manager`
+   * to run inside the same transaction as the Purchase row and Products
+   * update it's being corrected alongside.
+   */
+  async applyPurchaseAdjustment(
+    outletId: string,
+    productId: string,
+    delta: number,
+    manager?: EntityManager,
+  ) {
+    await this.upsertDelta(outletId, productId, delta, manager);
+  }
+
   /** Order confirm: no floor — an outlet is allowed to go negative. */
   async applyOrderConsumption(
     outletId: string,
@@ -163,15 +178,22 @@ export class OutletStockService {
     await this.upsertDelta(outletId, productId, baseQty);
   }
 
-  private async upsertDelta(outletId: string, productId: string, delta: number) {
-    const existing = await this.outletProductStockRepository.findOne({
-      where: { outletId, productId },
-    });
+  private async upsertDelta(
+    outletId: string,
+    productId: string,
+    delta: number,
+    manager?: EntityManager,
+  ) {
+    const repo = manager
+      ? manager.getRepository(OutletProductStock)
+      : this.outletProductStockRepository;
+
+    const existing = await repo.findOne({ where: { outletId, productId } });
     if (existing) {
       existing.quantity += delta;
-      await this.outletProductStockRepository.save(existing);
+      await repo.save(existing);
     } else {
-      await this.outletProductStockRepository.save({
+      await repo.save({
         outletId,
         productId,
         quantity: delta,

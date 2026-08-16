@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { CleaningDetailsDto } from './dto/cleaning-details.dto';
 import { ThresholdLevelDto } from './dto/thereshold-level.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Purchase } from './entities/purchase.entity';
 import { Products } from '../product/entities/product.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
@@ -24,6 +25,7 @@ export class PurchaseService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly outletStockService: OutletStockService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(createPurchaseDto: CreatePurchaseDto) {
@@ -67,6 +69,131 @@ export class PurchaseService {
     );
 
     return purchase;
+  }
+
+  async update(id: string, updatePurchaseDto: UpdatePurchaseDto) {
+    const purchase = await this.purchaseRepository.findOne({ where: { id } });
+    if (!purchase) throw new BadRequestException('Purchase not found');
+
+    const hasDownstream =
+      purchase.releasedQtny != null ||
+      purchase.cleanedQnty != null ||
+      purchase.cleanedCount != null ||
+      purchase.thresholdQnty != null;
+
+    const newProductId = updatePurchaseDto.productId ?? purchase.productId;
+    const newOutletId = updatePurchaseDto.outletId ?? purchase.outletId;
+    const newQuantity = updatePurchaseDto.quantity ?? purchase.quantity;
+    const newQuantityUnit =
+      updatePurchaseDto.quantityUnit ?? purchase.quantityUnit;
+
+    const stockAffecting =
+      newProductId !== purchase.productId ||
+      newOutletId !== purchase.outletId ||
+      newQuantity !== purchase.quantity ||
+      newQuantityUnit !== purchase.quantityUnit;
+
+    if (stockAffecting && hasDownstream) {
+      throw new BadRequestException(
+        'Cannot change product, outlet, or quantity — cleaning details or a threshold have already been recorded for this purchase',
+      );
+    }
+
+    const [product, outlet, supplier] = await Promise.all([
+      newProductId !== purchase.productId
+        ? this.productRepository.findOne({ where: { id: newProductId } })
+        : Promise.resolve(true),
+      newOutletId !== purchase.outletId
+        ? this.outletRepository.findOne({ where: { id: newOutletId } })
+        : Promise.resolve(true),
+      updatePurchaseDto.supplierId &&
+      updatePurchaseDto.supplierId !== purchase.supplierId
+        ? this.userRepository.findOne({
+            where: { id: updatePurchaseDto.supplierId },
+          })
+        : Promise.resolve(true),
+    ]);
+
+    if (!product) throw new BadRequestException('Product not found');
+    if (!outlet) throw new BadRequestException('Outlet not found');
+    if (!supplier) throw new BadRequestException('Supplier not found');
+
+    await this.dataSource.transaction(async (manager) => {
+      const oldBaseQty = toBase(purchase.quantity, purchase.quantityUnit);
+      const newBaseQty = toBase(newQuantity, newQuantityUnit);
+
+      const samePair =
+        newProductId === purchase.productId &&
+        newOutletId === purchase.outletId;
+
+      if (samePair) {
+        const delta = newBaseQty - oldBaseQty;
+        if (delta !== 0) {
+          await manager
+            .createQueryBuilder()
+            .update(Products)
+            .set({
+              totalQuantity: () => 'GREATEST(0, "totalQuantity" + :delta)',
+            })
+            .where('id = :id', { id: newProductId })
+            .setParameter('delta', delta)
+            .execute();
+
+          await this.outletStockService.applyPurchaseAdjustment(
+            newOutletId,
+            newProductId,
+            delta,
+            manager,
+          );
+        }
+      } else {
+        await manager
+          .createQueryBuilder()
+          .update(Products)
+          .set({
+            totalQuantity: () => 'GREATEST(0, "totalQuantity" - :qty)',
+          })
+          .where('id = :id', { id: purchase.productId })
+          .setParameter('qty', oldBaseQty)
+          .execute();
+
+        await this.outletStockService.applyPurchaseAdjustment(
+          purchase.outletId,
+          purchase.productId,
+          -oldBaseQty,
+          manager,
+        );
+
+        await manager
+          .createQueryBuilder()
+          .update(Products)
+          .set({
+            totalQuantity: () => 'GREATEST(0, "totalQuantity" + :qty)',
+          })
+          .where('id = :id', { id: newProductId })
+          .setParameter('qty', newBaseQty)
+          .execute();
+
+        await this.outletStockService.applyPurchaseAdjustment(
+          newOutletId,
+          newProductId,
+          newBaseQty,
+          manager,
+        );
+      }
+
+      await manager.update(Purchase, id, {
+        productId: newProductId,
+        outletId: newOutletId,
+        quantity: newQuantity,
+        quantityUnit: newQuantityUnit,
+        totalPrice: updatePurchaseDto.totalPrice ?? purchase.totalPrice,
+        supplierId: updatePurchaseDto.supplierId ?? purchase.supplierId,
+        batchNumber: updatePurchaseDto.batchNumber ?? purchase.batchNumber,
+      });
+    });
+
+    return this.findOne(id);
   }
 
   async addCleaningDetails(id: string, cleaningDetails: CleaningDetailsDto) {

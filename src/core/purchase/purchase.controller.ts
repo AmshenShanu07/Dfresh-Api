@@ -11,11 +11,15 @@ import {
 } from '@nestjs/common';
 import { PurchaseService } from './purchase.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { CleaningDetailsDto } from './dto/cleaning-details.dto';
 import { ThresholdLevelDto } from './dto/thereshold-level.dto';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { UserAuthGuard } from 'src/guards/user.guard';
+import { RolesGuard } from 'src/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { UserTypes } from 'src/common/enums';
 
 @Controller('purchase')
 export class PurchaseController {
@@ -47,6 +51,17 @@ export class PurchaseController {
   @Get('detail/:id')
   findOne(@Param('id') id: string) {
     return this.purchaseService.findOne(id);
+  }
+
+  @ApiBearerAuth()
+  @Roles(UserTypes.ADMIN, UserTypes.PURCHASE_STAFF)
+  @UseGuards(UserAuthGuard, RolesGuard)
+  @Put(':id')
+  update(
+    @Param('id') id: string,
+    @Body() updatePurchaseDto: UpdatePurchaseDto,
+  ) {
+    return this.purchaseService.update(id, updatePurchaseDto);
   }
 
   @ApiBearerAuth()

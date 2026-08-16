@@ -37,6 +37,7 @@ function buildService() {
     new FakeSimpleRepo({ id: 'outlet-1' }) as any, // outletRepository
     new FakeSimpleRepo({ id: 'supplier-1' }) as any, // userRepository
     outletStockService as any,
+    {} as any, // dataSource — unused by create()
   );
   return { service, outletStockService };
 }
