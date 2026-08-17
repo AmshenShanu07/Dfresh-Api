@@ -1,7 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, ILike, IsNull, Raw, Repository } from 'typeorm';
+import {
+  FindOptionsOrder,
+  FindOptionsWhere,
+  ILike,
+  In,
+  IsNull,
+  Raw,
+  Repository,
+} from 'typeorm';
 import { OrderDetails, OrderItems, DeliveryDetails } from './entities/order.entity';
 import { User } from '../users/entities/user.entity';
 import { Staff } from '../users/entities/staff.entity';
@@ -388,8 +396,17 @@ export class OrderService {
     const takeCount = positiveIntOr(filter.count, 10);
     const skipCount = (positiveIntOr(filter.pageNumber, 1) - 1) * takeCount;
 
+    // A comma-separated status list (e.g. "DISPATCHED,DELIVERED", used by the
+    // Dispatched Orders page) matches any of the given statuses. Single-status
+    // callers are unaffected.
+    const statusList = filter.status
+      ?.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean) as OrderStatus[] | undefined;
+
     const base: FindOptionsWhere<OrderDetails> = {};
-    if (filter.status) base.status = filter.status as OrderStatus;
+    if (statusList?.length === 1) base.status = statusList[0];
+    else if (statusList && statusList.length > 1) base.status = In(statusList);
     if (filter.deliveryAgentId) base.deliveryAgentId = filter.deliveryAgentId;
 
     // Explicit from/to wins over the preset; both go through the IST-aware
@@ -427,12 +444,22 @@ export class OrderService {
     // so `total` stays in step with the rows.
     const where = this.buildOrderSearchWhere(base, filter.search);
 
+    // Multi-status callers (Dispatched Orders: "DISPATCHED,DELIVERED") get
+    // DISPATCHED rows ahead of DELIVERED ones for free — Postgres orders a
+    // native enum column by its declared value order (DISPATCHED precedes
+    // DELIVERED in OrderStatus), not alphabetically. Single-status callers are
+    // unaffected since every row shares one status.
+    const order: FindOptionsOrder<OrderDetails> =
+      statusList && statusList.length > 1
+        ? { status: 'ASC', createdAt: 'DESC' }
+        : { createdAt: 'DESC' };
+
     const [total, data] = await Promise.all([
       this.orderDetailsRepository.count({ where }),
       this.orderDetailsRepository.find({
         where,
         relations: { user: true, orderItems: true },
-        order: { createdAt: 'DESC' },
+        order,
         take: takeCount,
         skip: skipCount,
       }),
@@ -894,9 +921,10 @@ export class OrderService {
   /**
    * Validates that `requestingUser` may act on this order's delivery OTP —
    * either they're the assigned delivery agent, or an ADMIN acting as a
-   * support fallback — and that the order is still CONFIRMED (not already
-   * DELIVERED/CANCELLED). Returns the order with the relations the caller
-   * needs to send the OTP (customer phone, order number derivation).
+   * support fallback — and that the order has been DISPATCHED (an agent
+   * assigned, out for delivery) but not yet DELIVERED/CANCELLED. Returns the
+   * order with the relations the caller needs to send the OTP (customer
+   * phone, order number derivation).
    */
   private async loadOrderForDeliveryOtp(
     orderId: string,
@@ -907,9 +935,9 @@ export class OrderService {
       relations: { user: true, deliveryDetails: true },
     });
     if (!order) throw new BadRequestException('Order not found');
-    if (order.status !== OrderStatus.CONFIRMED) {
+    if (order.status !== OrderStatus.DISPATCHED) {
       throw new BadRequestException(
-        'Order must be CONFIRMED to send or verify a delivery OTP',
+        'Order must be DISPATCHED to send or verify a delivery OTP',
       );
     }
     const isOwningAgent = order.deliveryAgentId === requestingUser.id;
