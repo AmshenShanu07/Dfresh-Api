@@ -135,6 +135,7 @@ export const salesReport = defineReport<SalesRow>({
       .leftJoin(User, 'u', 'u.id = o.userId')
       .select('o.id', 'orderId')
       .addSelect('o.createdAt', 'createdAt')
+      .addSelect('o.orderSeq', 'orderSeq')
       .addSelect('o.totalAmount', 'total')
       .addSelect('o.status', 'status')
       .addSelect('o.paymentMethod', 'paymentMethod')
@@ -151,6 +152,7 @@ export const salesReport = defineReport<SalesRow>({
       .where('o.createdAt >= :from AND o.createdAt < :to', { from, to })
       .groupBy('o.id')
       .addGroupBy('o.createdAt')
+      .addGroupBy('o.orderSeq')
       .addGroupBy('o.totalAmount')
       .addGroupBy('o.status')
       .addGroupBy('o.paymentMethod')
@@ -185,6 +187,7 @@ export const salesReport = defineReport<SalesRow>({
     const raw = await qb.getRawMany<{
       orderId: string;
       createdAt: Date;
+      orderSeq: number;
       total: string;
       status: OrderStatus;
       paymentMethod: PaymentMethod | null;
@@ -202,7 +205,11 @@ export const salesReport = defineReport<SalesRow>({
       orderId: r.orderId,
       // The same derivation the printed bill, the item label and the WhatsApp
       // caption use, so a row here matches a physical receipt.
-      orderNumber: deriveOrderNumber({ id: r.orderId, createdAt: r.createdAt }),
+      orderNumber: deriveOrderNumber({
+        id: r.orderId,
+        createdAt: r.createdAt,
+        orderSeq: r.orderSeq,
+      }),
       date: r.createdAt,
       customer: r.customer ?? '—',
       phone: r.phone ?? '—',

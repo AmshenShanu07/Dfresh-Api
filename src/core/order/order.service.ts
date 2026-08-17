@@ -454,10 +454,10 @@ export class OrderService {
    * Expands `base` into the OR-branches a search term needs, or returns it
    * untouched when there is nothing to search for.
    *
-   * The order number is derived, not stored, so it is matched by comparing the
-   * normalised term against the UUID with its hyphens removed. A term that
-   * normalises to nothing (`"DF-260727-"`) drops that branch entirely —
-   * otherwise its `%%` pattern would match every order.
+   * The order number is matched by comparing the normalised (digits-only, no
+   * leading zeros) term against `orderSeq`. A term that normalises to nothing
+   * (e.g. `"DF-260727-"`) drops that branch entirely — otherwise its `%%`
+   * pattern would match every order.
    */
   private buildOrderSearchWhere(
     base: FindOptionsWhere<OrderDetails>,
@@ -477,13 +477,12 @@ export class OrderService {
         ...base,
         // CAST(... AS text) rather than `::text`: TypeORM's property-name
         // rewriting does not understand the `::` operator and strips the
-        // quotes off the alias, leaving `OrderDetails.id` — which Postgres
-        // folds to `orderdetails` and then cannot find in the FROM clause.
-        id: Raw(
-          (alias) =>
-            `REPLACE(CAST(${alias} AS text), '-', '') ILIKE :dfOrderNo`,
-          { dfOrderNo: likeContains(orderNumber) },
-        ),
+        // quotes off the alias, leaving `OrderDetails.orderSeq` — which
+        // Postgres folds to `orderdetails` and then cannot find in the FROM
+        // clause.
+        orderSeq: Raw((alias) => `CAST(${alias} AS text) ILIKE :dfOrderNo`, {
+          dfOrderNo: likeContains(orderNumber),
+        }),
       });
     }
 
@@ -491,7 +490,7 @@ export class OrderService {
   }
 
   async findOne(id: string) {
-    return this.orderDetailsRepository.findOne({
+    const order = await this.orderDetailsRepository.findOne({
       where: { id },
       relations: {
         user: true,
@@ -500,6 +499,14 @@ export class OrderService {
         deliveryDetails: true,
       },
     });
+    if (!order) return null;
+
+    // Same convention as findAll: attach the display order number so every
+    // consumer of a single order (detail page, dashboard table) can show it
+    // without recomputing it independently — that independent recomputation
+    // (order.id.slice(0, 8)) is exactly what produced a different-looking
+    // number than the bill/WhatsApp messages on the frontend.
+    return { ...order, orderNumber: deriveOrderNumber(order) };
   }
 
   /**

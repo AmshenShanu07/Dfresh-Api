@@ -936,6 +936,7 @@ export class WhatsappService {
       this.messages.get('prep.cleaningQuestion', { chargeSuffix }),
       `clean~${variantId}~y`,
       `clean~${variantId}~n`,
+      entry.product?.image?.[0],
     );
   }
 
@@ -956,6 +957,7 @@ export class WhatsappService {
       this.messages.get('prep.cuttingQuestion'),
       `cut~${variantId}~${clean}~y`,
       `cut~${variantId}~${clean}~n`,
+      entry.product?.image?.[0],
     );
   }
 
@@ -1068,6 +1070,9 @@ export class WhatsappService {
       type: 'interactive',
       interactive: {
         type: 'button',
+        ...(entry.product?.image?.[0]
+          ? { header: { type: 'image', image: { link: entry.product.image[0] } } }
+          : {}),
         body: { text: body },
         footer: { text: this.messages.get('common.footer') },
         action: {
@@ -1388,6 +1393,7 @@ export class WhatsappService {
     bodyText: string,
     yesId: string,
     noId: string,
+    imageUrl?: string,
   ) {
     const payload = {
       messaging_product: 'whatsapp',
@@ -1396,6 +1402,9 @@ export class WhatsappService {
       type: 'interactive',
       interactive: {
         type: 'button',
+        ...(imageUrl
+          ? { header: { type: 'image', image: { link: imageUrl } } }
+          : {}),
         body: { text: bodyText },
         footer: { text: this.messages.get('common.footer') },
         action: {
@@ -1915,7 +1924,9 @@ export class WhatsappService {
       }
 
       // Only the checkout path carries an order id — advance it to payment.
-      // Onboarding (no order) just saves the address and stops here.
+      // Onboarding (no order) just saves the address, then drops the customer
+      // into the main menu — the same reply arbitrary text gets — since
+      // there's nothing else queued for them to do next.
       if (orderId) {
         addressData.flow_token = orderId;
         // Preserve the ward/area parsed from the flow token so the order can
@@ -1928,6 +1939,8 @@ export class WhatsappService {
         if (order) {
           await this.sendPaymentMethodButtons(phone, order.id, order.totalAmount);
         }
+      } else if (user) {
+        await this.sendMainMenu(user.name, phone);
       }
     } catch (error) {
       console.error('Error receiving address:', error);
@@ -2026,7 +2039,9 @@ export class WhatsappService {
 
     // Triggered from the dashboard, so it opens its own language scope.
     await this.withCustomerLanguage(phone, async () => {
-      const shortId = String(order.id ?? '').slice(0, 8).toUpperCase();
+      // Same derivation the bill, the label, and every other WhatsApp message
+      // use, so this message always shows the same order number as the rest.
+      const orderNo = deriveOrderNumber(order);
 
       let headline: string;
       // For a dispatched order, include the assigned delivery agent's contact so
@@ -2053,7 +2068,7 @@ export class WhatsappService {
 
       const body = this.messages.get('order.statusUpdate', {
         headline,
-        orderNumber: shortId,
+        orderNumber: orderNo,
         totalAmount: order.totalAmount,
         agentBlock,
       });

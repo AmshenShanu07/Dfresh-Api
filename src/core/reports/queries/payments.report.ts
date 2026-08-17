@@ -112,6 +112,7 @@ export const paymentsReport = defineReport<PaymentsRow>({
       .leftJoin(User, 'agent', 'agent.id = o.deliveryAgentId')
       .select('o.id', 'orderId')
       .addSelect('o.createdAt', 'createdAt')
+      .addSelect('o.orderSeq', 'orderSeq')
       .addSelect('o.totalAmount', 'total')
       .addSelect('o.paymentMethod', 'paymentMethod')
       .addSelect('o.paymentStatus', 'paymentStatus')
@@ -142,6 +143,7 @@ export const paymentsReport = defineReport<PaymentsRow>({
     const raw = await qb.getRawMany<{
       orderId: string;
       createdAt: Date;
+      orderSeq: number;
       total: string;
       paymentMethod: PaymentMethod | null;
       paymentStatus: PaymentStatus;
@@ -159,6 +161,7 @@ export const paymentsReport = defineReport<PaymentsRow>({
         orderNumber: deriveOrderNumber({
           id: r.orderId,
           createdAt: r.createdAt,
+          orderSeq: r.orderSeq,
         }),
         date: r.createdAt,
         customer: r.customer ?? '—',

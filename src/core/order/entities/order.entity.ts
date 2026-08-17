@@ -8,6 +8,7 @@ import {
   OneToMany,
   OneToOne,
   JoinColumn,
+  Generated,
 } from 'typeorm';
 import { OrderStatus, PaymentMethod, PaymentStatus } from 'src/common/enums';
 
@@ -15,6 +16,16 @@ import { OrderStatus, PaymentMethod, PaymentStatus } from 'src/common/enums';
 export class OrderDetails {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  // DB-generated, sequence-backed and unique across the whole table forever —
+  // the source of truth for the printed/WhatsApp order number (see
+  // deriveOrderNumber). The old approach derived a display number from the
+  // last 6 hex chars of `id`, which was only ever a UUID substring: not
+  // guaranteed unique, and computed independently (differently) by one
+  // WhatsApp message than by everything else. This column fixes both.
+  @Column({ unique: true })
+  @Generated('increment')
+  orderSeq: number;
 
   @Column({ type: 'varchar' })
   userId: string;
