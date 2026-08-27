@@ -458,7 +458,7 @@ export class OrderService {
       this.orderDetailsRepository.count({ where }),
       this.orderDetailsRepository.find({
         where,
-        relations: { user: true, orderItems: true },
+        relations: { user: true, orderItems: true, deliveryAgent: true, outlet: true },
         order,
         take: takeCount,
         skip: skipCount,
@@ -522,6 +522,7 @@ export class OrderService {
       relations: {
         user: true,
         deliveryAgent: true,
+        outlet: true,
         orderItems: { product: { category: true }, variant: true },
         deliveryDetails: true,
       },

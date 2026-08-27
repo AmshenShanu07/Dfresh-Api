@@ -1908,15 +1908,23 @@ export class WhatsappService {
       }
 
       const user = await this.userRepository.findOne({ where: { phone } });
+
+      // The name field has been removed from the WhatsApp address Flow form;
+      // use the customer's profile name (collected during onboarding) instead.
+      const customerName = user?.name?.trim() || '';
+      const customerPhone =
+        (typeof addressData.phone === 'string' && addressData.phone.trim()) ||
+        phone;
+
       if (user) {
         await this.userAddressRepository.save(
           this.userAddressRepository.create({
             userId: user.id,
-            name: addressData.name,
+            name: customerName,
             address: addressData.address,
             landmark: addressData.landmark,
             pinCode,
-            phone: addressData.phone,
+            phone: customerPhone,
             wardId: wardId ?? null,
             areaId: areaId ?? null,
           }),
@@ -1935,6 +1943,8 @@ export class WhatsappService {
         addressData.wardId = wardId ?? null;
         addressData.areaId = areaId ?? null;
         addressData.pinCode = pinCode;
+        addressData.name = customerName;
+        addressData.phone = customerPhone;
         const order = await this.orderService.updateOrderAddress(addressData);
         if (order) {
           await this.sendPaymentMethodButtons(phone, order.id, order.totalAmount);

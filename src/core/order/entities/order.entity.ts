@@ -133,6 +133,10 @@ export class OrderDetails {
   @JoinColumn({ name: 'deliveryAgentId' })
   deliveryAgent: any;
 
+  @ManyToOne('Outlets')
+  @JoinColumn({ name: 'outletId' })
+  outlet: any;
+
   @OneToMany('OrderItems', 'order')
   orderItems: any[];
 
