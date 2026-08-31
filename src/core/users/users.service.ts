@@ -11,16 +11,21 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { UserTypeDto } from './dto/user-type.dto';
+import {
+  UpdateCustomerAddressDto,
+  UpdateCustomerDto,
+} from './dto/update-customer.dto';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, In } from 'typeorm';
-import { User } from './entities/user.entity';
+import { User, UserAddress } from './entities/user.entity';
 import { Staff } from './entities/staff.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
 import { OrderDetails } from '../order/entities/order.entity';
 import { deriveOrderNumber } from '../order/order-number.util';
 import { UserTypes, OrderStatus } from 'src/common/enums';
 import { AreaService, AreaInput } from '../area/area.service';
+import { WardService } from '../ward/ward.service';
 import { normalisePhone } from 'src/common/utils/phone';
 
 @Injectable()
@@ -28,6 +33,8 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(UserAddress)
+    private userAddressRepository: Repository<UserAddress>,
     @InjectRepository(Staff)
     private staffRepository: Repository<Staff>,
     @InjectRepository(Outlets)
@@ -36,6 +43,7 @@ export class UsersService {
     private orderRepository: Repository<OrderDetails>,
     private jwtService: JwtService,
     private areaService: AreaService,
+    private wardService: WardService,
   ) {}
 
   async create(createUserDto: CreateUserDto) {
@@ -201,10 +209,15 @@ export class UsersService {
     const totalSpent = orders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
     const { password, ...customerInfo } = customer;
 
+    // The most recent address is the one the bot re-offers at checkout, so it
+    // is the one the edit screen prefills and writes back to.
+    const savedAddress = await this.findLatestAddress(id);
+
     return {
       ...customerInfo,
       orderCount: orders.length,
       totalSpent,
+      savedAddress,
       orders: orders.map((o) => ({
         id: o.id,
         orderNumber: deriveOrderNumber(o),
@@ -213,6 +226,124 @@ export class UsersService {
         createdAt: o.createdAt,
       })),
     };
+  }
+
+  private findLatestAddress(userId: string) {
+    return this.userAddressRepository.findOne({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Admin-facing customer edit. Separate from `update()` below, which takes a
+   * `PartialType(CreateUserDto)` and writes it straight through — that would
+   * let a password land in the DB unhashed and a role be changed from the
+   * customer screen. Here the writable fields are listed explicitly.
+   */
+  async updateCustomer(id: string, dto: UpdateCustomerDto) {
+    const customer = await this.userRepository.findOne({
+      where: { id, userType: UserTypes.CUSTOMER },
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    // `phone` is the raw WhatsApp `wa_id` and is unique. Normalising first
+    // means `9876543210` and `919876543210` resolve to the same row rather
+    // than colliding on the unique index at save time.
+    let phone = customer.phone;
+    if (dto.phone !== undefined) {
+      const normalised = normalisePhone(dto.phone);
+
+      if (normalised.length < 10) {
+        throw new BadRequestException('Invalid phone number');
+      }
+
+      if (normalised !== customer.phone) {
+        const duplicate = await this.userRepository.findOne({
+          where: { phone: normalised },
+        });
+
+        if (duplicate) {
+          throw new BadRequestException(
+            'Phone number already belongs to another user',
+          );
+        }
+      }
+
+      phone = normalised;
+    }
+
+    await this.userRepository.update(id, {
+      name: dto.name ?? customer.name,
+      phone,
+      email: dto.email ?? customer.email,
+      // An explicit null is a valid value here ("never asked"), so this has to
+      // test for `undefined` rather than truthiness.
+      language: dto.language !== undefined ? dto.language : customer.language,
+    });
+
+    if (dto.address) {
+      await this.saveCustomerAddress(id, phone, dto.address);
+    }
+
+    return this.findCustomerDetail(id);
+  }
+
+  /**
+   * Writes the customer's saved delivery address, updating the latest row in
+   * place so the bot keeps offering the same one at checkout rather than
+   * accumulating a near-duplicate on every admin edit.
+   */
+  private async saveCustomerAddress(
+    userId: string,
+    fallbackPhone: string,
+    dto: UpdateCustomerAddressDto,
+  ) {
+    // Throws NotFoundException when the ward is unknown.
+    await this.wardService.findOne(dto.wardId);
+
+    let areaId: string | null = null;
+    if (dto.areaId) {
+      const area = await this.areaService.findOneActive(dto.areaId);
+
+      if (!area) {
+        throw new BadRequestException('Area not found');
+      }
+
+      // A stale area from a previously selected ward would otherwise route the
+      // order to an agent who does not cover this address.
+      if (area.wardId !== dto.wardId) {
+        throw new BadRequestException(
+          'Area does not belong to the selected ward',
+        );
+      }
+
+      areaId = area.id;
+    }
+
+    const payload = {
+      name: dto.name ?? '',
+      address: dto.address,
+      landmark: dto.landmark ?? '',
+      pinCode: dto.pinCode ?? '',
+      phone: normalisePhone(dto.phone ?? '') || fallbackPhone,
+      wardId: dto.wardId,
+      areaId,
+    };
+
+    const existing = await this.findLatestAddress(userId);
+
+    if (existing) {
+      await this.userAddressRepository.update(existing.id, payload);
+      return;
+    }
+
+    await this.userAddressRepository.save(
+      this.userAddressRepository.create({ userId, ...payload }),
+    );
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
@@ -226,24 +357,34 @@ export class UsersService {
   }
 
   async createStaff(data: CreateStaffDto) {
-    const outlet = await this.outletRepository.findOne({
-      where: { id: data.outletId },
-    });
+    // Only outlet agents get a Staff join row — the same rule
+    // `syncStaffOutlet` enforces on edit. Other roles used to get one too,
+    // which made them count as an "agent assigned" on the outlets list. The
+    // staff form submits an empty outletId for those roles.
+    const isOutletAgent = data.userType === UserTypes.OUTLET_AGENT;
 
-    if (!outlet) {
-      return new BadRequestException('Outlet not found');
+    // Validated before the user is created so a bad outletId can't leave an
+    // orphan User row behind.
+    if (isOutletAgent) {
+      const outlet = data.outletId
+        ? await this.outletRepository.findOne({ where: { id: data.outletId } })
+        : null;
+
+      if (!outlet) {
+        throw new BadRequestException('Outlet not found');
+      }
     }
 
     const user: any = await this.create(data as CreateUserDto);
 
-    await this.staffRepository.save(
-      this.staffRepository.create({
-        userId: user.id,
-        outletId: data.outletId,
-      }),
-    );
+    if (isOutletAgent) {
+      await this.staffRepository.save(
+        this.staffRepository.create({
+          userId: user.id,
+          outletId: data.outletId,
+        }),
+      );
 
-    if (data.userType === UserTypes.OUTLET_AGENT) {
       await this.areaService.reconcileAreasForStaff(
         user.id,
         data.outletId,

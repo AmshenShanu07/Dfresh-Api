@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { CreateOutletDto } from './dto/create-outlet.dto';
 import { UpdateOutletDto } from './dto/update-outlet.dto';
 import { OutletFilterDto } from './dto/filter-list.dto';
@@ -7,6 +7,7 @@ import { FindOptionsWhere, Repository } from 'typeorm';
 import { Outlets } from './entities/outlet.entity';
 import { Staff } from '../users/entities/staff.entity';
 import { User } from '../users/entities/user.entity';
+import { UserTypes } from 'src/common/enums';
 
 @Injectable()
 export class OutletService {
@@ -20,12 +21,6 @@ export class OutletService {
   ) {}
 
   async create(createOutletDto: CreateOutletDto) {
-    const user = await this.userRepository.findOne({
-      where: { id: createOutletDto.userId },
-    });
-
-    if (!user) return new BadRequestException('User not found');
-
     const outlet = await this.outletRepository.save(
       this.outletRepository.create({
         name: createOutletDto.name,
@@ -37,12 +32,24 @@ export class OutletService {
       }),
     );
 
-    await this.staffRepository.save(
-      this.staffRepository.create({
-        outletId: outlet.id,
-        userId: user.id,
-      }),
-    );
+    // Only outlet agents belong in the Staff join table — the same rule
+    // `UsersService.syncStaffOutlet` enforces on edit. The create form submits
+    // the logged-in admin's own id here, so joining it unconditionally made
+    // every outlet an admin created report a phantom "agent assigned".
+    if (createOutletDto.userId) {
+      const user = await this.userRepository.findOne({
+        where: { id: createOutletDto.userId },
+      });
+
+      if (user?.userType === UserTypes.OUTLET_AGENT) {
+        await this.staffRepository.save(
+          this.staffRepository.create({
+            outletId: outlet.id,
+            userId: user.id,
+          }),
+        );
+      }
+    }
 
     return this.findOne(outlet.id);
   }

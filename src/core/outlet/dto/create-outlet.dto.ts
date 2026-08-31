@@ -46,12 +46,13 @@ export class CreateOutletDto {
 
   @ApiProperty({
     example: 'Outlet User Id',
-    description: 'The user id of the outlet',
-    required: true,
+    description:
+      'Optional outlet agent to assign on creation. Ignored unless the user is an OUTLET_AGENT — agents are normally assigned from Staff Management.',
+    required: false,
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  userId: string;
+  userId?: string;
 
   @ApiProperty({
     example: true,

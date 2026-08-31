@@ -7,10 +7,13 @@ import {
   Delete,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateCustomerDto } from './dto/update-customer.dto';
+import { UserAuthGuard } from 'src/guards/user.guard';
 import { ApiTags } from '@nestjs/swagger';
 import { LoginDto } from './dto/login.dto';
 import { CreateStaffDto } from './dto/create-staff.dto';
@@ -75,6 +78,20 @@ export class UsersController {
   @Get('detail/:id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
+  }
+
+  /**
+   * Admin customer edit. Guarded at the method level: the rest of this
+   * controller is currently unauthenticated, and `/login` has to stay that
+   * way, so widening the guard is a separate change.
+   */
+  @Put('customer/:id')
+  @UseGuards(UserAuthGuard)
+  updateCustomer(
+    @Param('id') id: string,
+    @Body() updateCustomerDto: UpdateCustomerDto,
+  ) {
+    return this.usersService.updateCustomer(id, updateCustomerDto);
   }
 
   @Put('update/:id')
