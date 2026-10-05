@@ -5,10 +5,13 @@ import { CreateUserDto } from './create-user.dto';
 import { AreaItemDto } from './area-item.dto';
 
 class BaseStaffDto extends PartialType(CreateUserDto) {
-  @ApiProperty({ example: '' })
-  @IsNotEmpty()
+  // Empty string means "this role has no outlet" (every role except
+  // OUTLET_AGENT). UsersService.createStaff requires a real outlet for
+  // outlet agents, so @IsNotEmpty here would reject every other role.
+  @ApiPropertyOptional({ example: '' })
+  @IsOptional()
   @IsString()
-  outletId: string;
+  outletId?: string;
 
   // Only meaningful when userType is OUTLET_AGENT — the list of areas (within
   // the chosen outlet's ward) this agent covers.

@@ -28,6 +28,8 @@ import { AreaService, AreaInput } from '../area/area.service';
 import { WardService } from '../ward/ward.service';
 import { normalisePhone } from 'src/common/utils/phone';
 
+export const NON_LOGIN_USER_TYPES = [UserTypes.CUSTOMER, UserTypes.SUPPLIER];
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -69,10 +71,12 @@ export class UsersService {
   }
 
   async login(data: LoginDto) {
+    // Customers order over WhatsApp and suppliers are records only (created
+    // with a shared default password), so neither may sign in to the dashboard.
     const isExist = await this.userRepository.findOne({
       where: {
         phone: data.phone,
-        userType: Not(UserTypes.CUSTOMER),
+        userType: Not(In(NON_LOGIN_USER_TYPES)),
       },
     });
 

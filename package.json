@@ -104,5 +104,6 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
-  }
+  },
+  "allowScripts": {}
 }
