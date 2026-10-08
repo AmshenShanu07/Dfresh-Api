@@ -171,6 +171,9 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     // Sent before the ward list when a customer with no saved address browses.
     addressFirst:
       'Please add your delivery address first, so we can show you what is available near you.',
+    // Sent instead of products when no outlet delivers to the customer's ward.
+    notServiceable:
+      'Sorry, we do not deliver to your ward yet. We are expanding soon — please check back later.',
   },
 
   address: {
@@ -273,6 +276,11 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     otp:
       '🔐 Your Daily Fresh delivery OTP for order *#{{orderNumber}}* is *{{otp}}*.\n\n' +
       'Share this with the delivery agent to confirm you received your order.',
+    // Sent once the delivery agent verifies the OTP and the order is DELIVERED.
+    delivered:
+      'Your package with {{itemCount}} item(s) from your order #{{orderNumber}} was successfully delivered.\n\n' +
+      'Thank you\n\n' +
+      'Shop with us again!!',
   },
 
   availability: {

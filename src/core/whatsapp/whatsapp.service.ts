@@ -715,8 +715,9 @@ export class WhatsappService {
    * automatically; with several, the one they picked (kept on their cart).
    *
    * With `prompt`, a customer with no saved ward is asked for their address
-   * first, and one in a multi-outlet ward without a valid choice is sent the
-   * outlet picker — both return 'prompted'. Without `prompt` an unresolved
+   * first, one in a ward no outlet serves is told so, and one in a
+   * multi-outlet ward without a valid choice is sent the outlet picker — all
+   * return 'prompted'. Without `prompt` an unresolved
    * outlet is simply null.
    */
   private async resolveShoppingOutlet(
@@ -741,9 +742,14 @@ export class WhatsappService {
     const outlets = await this.orderService.findSellingOutletsForWard(
       address.wardId,
     );
-    // A ward no outlet sells into keeps the old behaviour: catalog stock
-    // only, outlet derived from the address after checkout.
-    if (outlets.length === 0) return none;
+    // No outlet delivers here: nothing can be ordered. Orders used to fall
+    // back to catalog stock with no outlet, leaving them with no outlet or
+    // agent to fulfil them.
+    if (outlets.length === 0) {
+      if (!prompt) return none;
+      await this.sendText(phone, this.messages.get('outlet.notServiceable'));
+      return 'prompted';
+    }
 
     let outlet: Outlets | null = outlets.length === 1 ? outlets[0] : null;
     if (!outlet) {
@@ -1748,6 +1754,16 @@ export class WhatsappService {
     outletId: string | null = null,
   ) {
     try {
+      // Every order needs the outlet that fulfils it. Native catalog orders
+      // arrive without one, so resolve it here; a customer with no address,
+      // no serviceable ward or no outlet choice is prompted instead.
+      if (!outletId) {
+        const shopping = await this.resolveShoppingOutlet(phone, true);
+        if (shopping === 'prompted') return;
+        if (!shopping.outlet) return;
+        outletId = shopping.outlet.id;
+      }
+
       const order = await this.orderService.createOrder(
         phone,
         products,
@@ -1793,12 +1809,20 @@ export class WhatsappService {
    * `orderId` is present only in the checkout path; onboarding omits it.
    */
   async sendWardList(phone: string, page = 0, orderId?: string) {
-    const wards = await this.wardService.findAllActive();
+    const allWards = await this.wardService.findAllActive();
 
     // No wards configured yet — fall straight through to the address form so the
     // customer is never blocked.
-    if (wards.length === 0) {
+    if (allWards.length === 0) {
       return this.sendAddressFlowForm(phone, null, orderId);
+    }
+
+    // Only wards an outlet sells into: picking any other ward would only end
+    // in "we don't deliver to your ward yet".
+    const serviceable = await this.orderService.findServiceableWardIds();
+    const wards = allWards.filter((w) => serviceable.has(w.id));
+    if (wards.length === 0) {
+      return this.sendText(phone, this.messages.get('outlet.notServiceable'));
     }
 
     const LIST_MAX = 10;
@@ -2438,6 +2462,24 @@ export class WhatsappService {
   async sendDeliveryOtpMessage(phone: string, otp: string, orderNumber: string) {
     await this.withCustomerLanguage(phone, async () => {
       const body = this.messages.get('delivery.otp', { otp, orderNumber });
+      await this.sendText(phone, body);
+    });
+  }
+
+  /**
+   * Tells the customer their order was delivered. Triggered when the delivery
+   * agent's OTP entry is verified and the order moves to DELIVERED.
+   */
+  async sendOrderDeliveredMessage(
+    phone: string,
+    orderNumber: string,
+    itemCount: number,
+  ) {
+    await this.withCustomerLanguage(phone, async () => {
+      const body = this.messages.get('delivery.delivered', {
+        orderNumber,
+        itemCount: String(itemCount),
+      });
       await this.sendText(phone, body);
     });
   }

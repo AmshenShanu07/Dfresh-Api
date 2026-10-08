@@ -24,7 +24,12 @@ import { Outlets } from '../outlet/entities/outlet.entity';
 import { OrderDetails } from '../order/entities/order.entity';
 import { deriveOrderNumber } from '../order/order-number.util';
 import { UserTypes, OrderStatus } from 'src/common/enums';
-import { AreaService, AreaInput } from '../area/area.service';
+import {
+  AreaService,
+  AreaInput,
+  countValidAreas,
+} from '../area/area.service';
+import { OutletIntegrityService } from '../outlet/outlet-integrity.service';
 import { WardService } from '../ward/ward.service';
 import { normalisePhone } from 'src/common/utils/phone';
 
@@ -46,6 +51,7 @@ export class UsersService {
     private jwtService: JwtService,
     private areaService: AreaService,
     private wardService: WardService,
+    private outletIntegrity: OutletIntegrityService,
   ) {}
 
   async create(createUserDto: CreateUserDto) {
@@ -355,7 +361,21 @@ export class UsersService {
     return this.userRepository.findOne({ where: { id } });
   }
 
+  // The Users page deletes staff through here too, so an outlet agent is
+  // cleaned up the same way as through deleteStaff: the last agent of an
+  // active outlet is protected, and the agent's Staff row and areas go.
   async remove(id: string) {
+    const staff = await this.staffRepository.findOne({
+      where: { userId: id },
+    });
+    if (staff) {
+      if (!staff.isDeleted) {
+        await this.outletIntegrity.assertCanLoseAgent(staff.outletId, id);
+      }
+      await this.staffRepository.delete({ userId: id });
+      await this.areaService.deactivateAreasForUser(id);
+    }
+
     await this.userRepository.delete(id);
     return { id };
   }
@@ -376,6 +396,13 @@ export class UsersService {
 
       if (!outlet) {
         throw new BadRequestException('Outlet not found');
+      }
+
+      // An area pick is what assigns the delivering agent to an order.
+      if (countValidAreas(data.areas) === 0) {
+        throw new BadRequestException(
+          'An outlet agent needs at least one area',
+        );
       }
     }
 
@@ -404,6 +431,32 @@ export class UsersService {
 
     if (!user) {
       throw new NotFoundException('Staff not found');
+    }
+
+    // Validated before any write: an agent leaving its outlet (role change or
+    // move) must not strip an active outlet of its last agent, and an agent
+    // must keep at least one area.
+    const nextType = data.userType ?? user.userType;
+    const currentStaff = await this.staffRepository.findOne({
+      where: { userId: id },
+    });
+    if (currentStaff && !currentStaff.isDeleted) {
+      const leavesOutlet =
+        nextType !== UserTypes.OUTLET_AGENT ||
+        (!!data.outletId && data.outletId !== currentStaff.outletId);
+      if (leavesOutlet) {
+        await this.outletIntegrity.assertCanLoseAgent(
+          currentStaff.outletId,
+          id,
+        );
+      }
+    }
+    if (
+      nextType === UserTypes.OUTLET_AGENT &&
+      data.areas !== undefined &&
+      countValidAreas(data.areas) === 0
+    ) {
+      throw new BadRequestException('An outlet agent needs at least one area');
     }
 
     // `phone` is unique and doubles as the login id, so guard it against
@@ -500,9 +553,6 @@ export class UsersService {
     if (!staff) {
       return new BadRequestException('Staff not found');
     }
-
-    await this.staffRepository.delete({ userId: id });
-    await this.areaService.deactivateAreasForUser(id);
 
     return this.remove(id);
   }

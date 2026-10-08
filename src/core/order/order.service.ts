@@ -358,14 +358,15 @@ export class OrderService {
 
   /**
    * `outletId` is the outlet the customer shopped from (resolved before
-   * browsing in WhatsappService); null when their ward has no selling outlet,
-   * in which case the outlet is derived from the address later.
+   * browsing in WhatsappService). Required: an order with no outlet has no
+   * stock source and no agent to deliver it, so none is created.
    */
   async createOrder(
     phone: string,
     products: any[],
     outletId: string | null = null,
   ) {
+    if (!outletId) return null;
     try {
       const user = await this.userRepository.findOne({
         where: { phone, userType: UserTypes.CUSTOMER },
@@ -644,20 +645,54 @@ export class OrderService {
   }
 
   /**
-   * Outlets a customer in this ward can buy from: active, not deleted and with
-   * Enable Sales on, oldest first. One → it serves the ward automatically;
-   * two or more → the customer (or admin, for manual orders) chooses.
+   * Outlets a customer in this ward can buy from: active, not deleted, with
+   * Enable Sales on, and with at least one outlet agent covering an active
+   * area — oldest first. One → it serves the ward automatically; two or more
+   * → the customer (or admin, for manual orders) chooses; none → the ward is
+   * not serviceable and no order can be placed.
+   *
+   * The agent/area condition is the safety net behind the outlet ⇄ agent
+   * rules (OutletIntegrityService): an outlet that somehow has no agent, or an
+   * agent with no area, would take orders nobody can be assigned to deliver.
    */
   findSellingOutletsForWard(wardId: string) {
-    return this.outletRepository.find({
-      where: {
-        wardId,
-        isDeleted: false,
-        isActive: true,
-        isSalesEnabled: true,
-      },
-      order: { createdAt: 'ASC' },
-    });
+    return this.sellingOutletsQuery()
+      .andWhere('outlet."wardId" = :wardId', { wardId })
+      .orderBy('outlet."createdAt"', 'ASC')
+      .getMany();
+  }
+
+  /**
+   * Wards with at least one selling outlet — the only wards a customer is
+   * offered, since any other ward can't take an order.
+   */
+  async findServiceableWardIds(): Promise<Set<string>> {
+    const rows = await this.sellingOutletsQuery()
+      .select('DISTINCT outlet."wardId"', 'wardId')
+      .getRawMany<{ wardId: string }>();
+    return new Set(rows.map((r) => r.wardId));
+  }
+
+  private sellingOutletsQuery() {
+    return this.outletRepository
+      .createQueryBuilder('outlet')
+      .where('outlet."wardId" IS NOT NULL')
+      .andWhere('outlet."isDeleted" = false')
+      .andWhere('outlet."isActive" = true')
+      .andWhere('outlet."isSalesEnabled" = true')
+      .andWhere(
+        `EXISTS (
+          SELECT 1 FROM "Staff" s
+          JOIN "User" u ON u."id" = s."userId"
+          JOIN "Area" a ON a."userId" = s."userId" AND a."outletId" = s."outletId"
+          WHERE s."outletId" = outlet."id"
+            AND s."isDeleted" = false
+            AND u."userType" = :agentType
+            AND a."isActive" = true
+            AND a."isDeleted" = false
+        )`,
+        { agentType: UserTypes.OUTLET_AGENT },
+      );
   }
 
   /**

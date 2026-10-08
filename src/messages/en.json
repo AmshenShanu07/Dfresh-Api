@@ -93,7 +93,8 @@
     "listSection": "Outlets",
     "changeRow": "Change outlet",
     "selected": "You are now shopping from {{outlet}}.",
-    "addressFirst": "Please add your delivery address first, so we can show you what is available near you."
+    "addressFirst": "Please add your delivery address first, so we can show you what is available near you.",
+    "notServiceable": "Sorry, we do not deliver to your ward yet. We are expanding soon — please check back later."
   },
   "cart": {
     "summary": "🛒 *My Daily Cart*\n\n{{lines}}\n\nTotal Items: {{totalQuantity}}\n*Total Amount: ₹{{grandTotal}}*",
@@ -172,7 +173,8 @@
     "billCaption": "🧾 Your Invoice for the order {{orderNumber}}"
   },
   "delivery": {
-    "otp": "🔐 Your Daily Fresh delivery OTP for order *#{{orderNumber}}* is *{{otp}}*.\n\nShare this with the delivery agent to confirm you received your order."
+    "otp": "🔐 Your Daily Fresh delivery OTP for order *#{{orderNumber}}* is *{{otp}}*.\n\nShare this with the delivery agent to confirm you received your order.",
+    "delivered": "Your package with {{itemCount}} item(s) from your order #{{orderNumber}} was successfully delivered.\n\nThank you\n\nShop with us again!!"
   },
   "availability": {
     "outOfStock": "All products are currently out of stock. Please try after some time",

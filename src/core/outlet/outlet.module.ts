@@ -6,10 +6,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Outlets } from './entities/outlet.entity';
 import { Staff } from '../users/entities/staff.entity';
 import { User } from '../users/entities/user.entity';
+import { AreaModule } from '../area/area.module';
+import { OutletIntegrityService } from './outlet-integrity.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Outlets, Staff, User])],
+  imports: [TypeOrmModule.forFeature([Outlets, Staff, User]), AreaModule],
   controllers: [OutletController],
-  providers: [OutletService, JwtService],
+  providers: [OutletService, OutletIntegrityService, JwtService],
+  exports: [OutletIntegrityService],
 })
 export class OutletModule {}

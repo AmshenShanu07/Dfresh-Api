@@ -9,12 +9,14 @@ import { Outlets } from '../outlet/entities/outlet.entity';
 import { OrderDetails } from '../order/entities/order.entity';
 import { AreaModule } from '../area/area.module';
 import { WardModule } from '../ward/ward.module';
+import { OutletModule } from '../outlet/outlet.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, UserAddress, Staff, Outlets, OrderDetails]),
     AreaModule,
     WardModule,
+    OutletModule,
   ],
   controllers: [UsersController],
   providers: [UsersService, JwtService],

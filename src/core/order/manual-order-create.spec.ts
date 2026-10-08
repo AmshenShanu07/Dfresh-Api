@@ -109,12 +109,22 @@ class FakeOrderService {
   }
 }
 
+// Every selling outlet has agents covering areas, so a manual order always
+// carries an outlet and an area. Defaults supply one of each, matched.
+const DEFAULT_OUTLET = { id: '55555555-5555-5555-5555-555555555555', name: 'Outlet' };
+const DEFAULT_AREA_ID = '33333333-3333-3333-3333-333333333333';
+
 function buildService({
   existingUser = null,
   variants = [variantRow],
   ward = { id: '22222222-2222-2222-2222-222222222222' },
-  area = null,
-  outlets = [],
+  outlets = [DEFAULT_OUTLET],
+  area = {
+    id: DEFAULT_AREA_ID,
+    wardId: '22222222-2222-2222-2222-222222222222',
+    outletId: outlets[0]?.id,
+    userId: 'agent-7',
+  },
   outletStock = {},
 }: {
   existingUser?: any;
@@ -157,6 +167,7 @@ const baseDto = () => ({
     },
   ],
   wardId: '22222222-2222-2222-2222-222222222222',
+  areaId: DEFAULT_AREA_ID,
   deliveryName: 'Priya',
   deliveryPhone: '9876543210',
   address: '12 Marine Drive',
@@ -250,30 +261,32 @@ describe('ManualOrderService.create', () => {
   });
 
   it('auto-assigns the delivery agent from the selected area', async () => {
-    const areaId = '33333333-3333-3333-3333-333333333333';
-    const { service, manager } = buildService({
-      area: {
-        id: areaId,
-        wardId: '22222222-2222-2222-2222-222222222222',
-        userId: 'agent-7',
-      },
-    });
-
-    await service.create({ ...baseDto(), areaId } as any);
-
-    const [order] = manager.rowsFor(OrderDetails);
-    expect(order.areaId).toBe(areaId);
-    expect(order.deliveryAgentId).toBe('agent-7');
-  });
-
-  it('leaves areaId and deliveryAgentId null when the ward has no areas', async () => {
     const { service, manager } = buildService();
 
     await service.create(baseDto() as any);
 
     const [order] = manager.rowsFor(OrderDetails);
-    expect(order.areaId).toBeNull();
-    expect(order.deliveryAgentId).toBeNull();
+    expect(order.areaId).toBe(DEFAULT_AREA_ID);
+    expect(order.deliveryAgentId).toBe('agent-7');
+    expect(order.outletId).toBe(DEFAULT_OUTLET.id);
+  });
+
+  it('rejects an order with no area selected', async () => {
+    const { service, manager } = buildService();
+
+    await expect(
+      service.create({ ...baseDto(), areaId: undefined } as any),
+    ).rejects.toThrow('Select the delivery area.');
+    expect(manager.rowsFor(OrderDetails)).toHaveLength(0);
+  });
+
+  it('rejects an order in a ward no outlet delivers to', async () => {
+    const { service, manager } = buildService({ outlets: [] });
+
+    await expect(service.create(baseDto() as any)).rejects.toThrow(
+      'No outlet delivers to this ward.',
+    );
+    expect(manager.rowsFor(OrderDetails)).toHaveLength(0);
   });
 
   it('rejects an area that belongs to a different ward', async () => {
@@ -352,6 +365,12 @@ describe('ManualOrderService.create — fulfilling outlet', () => {
       variants,
       outlets: [outletA, outletB],
       outletStock: { 'product-1': 5000 },
+      area: {
+        id: DEFAULT_AREA_ID,
+        wardId: '22222222-2222-2222-2222-222222222222',
+        outletId: outletB.id,
+        userId: 'agent-b',
+      },
     });
 
     await service.create({ ...baseDto(), outletId: outletB.id } as any);

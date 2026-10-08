@@ -110,6 +110,7 @@ function buildService({
     null as any,
     areaService,
     wardService,
+    null as any, // outletIntegrity
   );
 
   return { service, userRepository, addressRepository };

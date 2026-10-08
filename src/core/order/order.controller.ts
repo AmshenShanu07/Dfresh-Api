@@ -255,15 +255,37 @@ export class OrderController {
   /**
    * Verifies the delivery agent's OTP entry and, on a match, moves the order
    * to DELIVERED. This is the only path in the app that sets DELIVERED.
+   * The customer then gets a "delivered" WhatsApp message. The order is
+   * already DELIVERED by then, so a send failure is logged, not thrown.
    */
   @Roles(UserTypes.OUTLET_AGENT, UserTypes.ADMIN)
   @UseGuards(RolesGuard)
   @Post(':id/verify-delivery-otp')
-  verifyDeliveryOtp(
+  async verifyDeliveryOtp(
     @Param('id') id: string,
     @Body('code') code: string,
     @Req() req: any,
   ) {
-    return this.orderService.verifyDeliveryOtp(id, req.user, code);
+    const result = await this.orderService.verifyDeliveryOtp(
+      id,
+      req.user,
+      code,
+    );
+
+    const order = result.success ? result.order : null;
+    const customerPhone = order?.user?.phone ?? order?.deliveryDetails?.phone;
+    if (order && customerPhone) {
+      try {
+        await this.whatsappService.sendOrderDeliveredMessage(
+          customerPhone,
+          order.orderNumber,
+          order.orderItems?.length ?? 0,
+        );
+      } catch (error) {
+        console.error('Delivered message send failed', id, error);
+      }
+    }
+
+    return result;
   }
 }

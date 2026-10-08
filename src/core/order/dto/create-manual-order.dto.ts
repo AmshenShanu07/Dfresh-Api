@@ -64,7 +64,7 @@ export class CreateManualOrderDto {
   @IsUUID()
   outletId?: string | null;
 
-  /** Omitted when the ward has no areas configured. */
+  /** Required by the service; optional here so it can name the missing field. */
   @IsOptional()
   @IsUUID()
   areaId?: string | null;

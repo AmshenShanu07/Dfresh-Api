@@ -1,58 +1,104 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { CreateOutletDto } from './dto/create-outlet.dto';
 import { UpdateOutletDto } from './dto/update-outlet.dto';
 import { OutletFilterDto } from './dto/filter-list.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, In, Repository } from 'typeorm';
 import { Outlets } from './entities/outlet.entity';
 import { Staff } from '../users/entities/staff.entity';
 import { User } from '../users/entities/user.entity';
 import { UserTypes } from 'src/common/enums';
+import { AreaService, countValidAreas } from '../area/area.service';
+import { OutletIntegrityService } from './outlet-integrity.service';
 
 @Injectable()
 export class OutletService {
   constructor(
     @InjectRepository(Outlets)
     private readonly outletRepository: Repository<Outlets>,
-    @InjectRepository(Staff)
-    private readonly staffRepository: Repository<Staff>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly dataSource: DataSource,
+    private readonly areaService: AreaService,
+    private readonly outletIntegrity: OutletIntegrityService,
   ) {}
 
+  /**
+   * Creates the outlet together with its outlet agents (User + Staff + Areas)
+   * in one transaction. An outlet starts active, and an active outlet with no
+   * agent can't receive orders — so creation requires at least one agent, and
+   * any failure (duplicate phone, bad area) leaves nothing behind.
+   */
   async create(createOutletDto: CreateOutletDto) {
-    const outlet = await this.outletRepository.save(
-      this.outletRepository.create({
-        name: createOutletDto.name,
-        address: createOutletDto.address,
-        phone: createOutletDto.phone,
-        location: createOutletDto.location,
-        commission: createOutletDto.commission,
-        isSalesEnabled: createOutletDto.isSalesEnabled,
-        wardId: createOutletDto.wardId ?? null,
-      }),
-    );
-
-    // Only outlet agents belong in the Staff join table — the same rule
-    // `UsersService.syncStaffOutlet` enforces on edit. The create form submits
-    // the logged-in admin's own id here, so joining it unconditionally made
-    // every outlet an admin created report a phantom "agent assigned".
-    if (createOutletDto.userId) {
-      const user = await this.userRepository.findOne({
-        where: { id: createOutletDto.userId },
-      });
-
-      if (user?.userType === UserTypes.OUTLET_AGENT) {
-        await this.staffRepository.save(
-          this.staffRepository.create({
-            outletId: outlet.id,
-            userId: user.id,
-          }),
+    const agents = createOutletDto.agents ?? [];
+    if (agents.length === 0) {
+      throw new BadRequestException('Add at least one outlet agent');
+    }
+    for (const agent of agents) {
+      if (countValidAreas(agent.areas) === 0) {
+        throw new BadRequestException(
+          `Agent ${agent.name} needs at least one area`,
         );
       }
     }
 
-    return this.findOne(outlet.id);
+    // `phone` is unique and doubles as the login id.
+    const phones = agents.map((a) => a.phone.trim());
+    if (new Set(phones).size !== phones.length) {
+      throw new BadRequestException('Two agents have the same mobile number');
+    }
+    const taken = await this.userRepository.find({
+      where: { phone: In(phones) },
+    });
+    if (taken.length) {
+      throw new BadRequestException(
+        `User already exist: ${taken.map((u) => u.phone).join(', ')}`,
+      );
+    }
+
+    const outletId = await this.dataSource.transaction(async (manager) => {
+      const outlet = await manager.getRepository(Outlets).save(
+        manager.getRepository(Outlets).create({
+          name: createOutletDto.name,
+          address: createOutletDto.address,
+          phone: createOutletDto.phone,
+          location: createOutletDto.location,
+          commission: createOutletDto.commission,
+          isSalesEnabled: createOutletDto.isSalesEnabled,
+          wardId: createOutletDto.wardId,
+        }),
+      );
+
+      for (const agent of agents) {
+        const user = await manager.getRepository(User).save(
+          manager.getRepository(User).create({
+            name: agent.name,
+            phone: agent.phone.trim(),
+            password: await bcrypt.hash(agent.password, 10),
+            userType: UserTypes.OUTLET_AGENT,
+            address: agent.address,
+          }),
+        );
+        await manager
+          .getRepository(Staff)
+          .save(
+            manager
+              .getRepository(Staff)
+              .create({ userId: user.id, outletId: outlet.id }),
+          );
+        await this.areaService.reconcileAreasForStaff(
+          user.id,
+          outlet.id,
+          agent.areas,
+          manager,
+        );
+      }
+
+      return outlet.id;
+    });
+
+    return this.findOne(outletId);
   }
 
   findAll() {
@@ -106,27 +152,63 @@ export class OutletService {
   }
 
   async update(id: string, updateOutletDto: UpdateOutletDto) {
+    const outlet = await this.outletRepository.findOne({ where: { id } });
+    if (!outlet || outlet.isDeleted) {
+      throw new BadRequestException('Outlet not found');
+    }
+
+    // Omitted keeps the current ward; an outlet can't be left without one.
+    if (updateOutletDto.wardId === null || updateOutletDto.wardId === '') {
+      throw new BadRequestException('Ward is required');
+    }
+
+    const willBeActive = updateOutletDto.isActive ?? outlet.isActive;
+    if (
+      willBeActive &&
+      (await this.outletIntegrity.countActiveAgents(id)) === 0
+    ) {
+      throw new BadRequestException(
+        'Add at least one agent before activating this outlet',
+      );
+    }
+
     await this.outletRepository.update(id, {
       name: updateOutletDto.name,
       address: updateOutletDto.address,
       phone: updateOutletDto.phone,
       location: updateOutletDto.location,
       commission: updateOutletDto.commission,
-      isSalesEnabled: updateOutletDto.isSalesEnabled,
+      // An inactive outlet can't sell — switching it off turns sales off too.
+      isSalesEnabled: willBeActive ? updateOutletDto.isSalesEnabled : false,
       isActive: updateOutletDto.isActive,
       wardId: updateOutletDto.wardId,
     });
 
+    if (updateOutletDto.wardId && updateOutletDto.wardId !== outlet.wardId) {
+      await this.areaService.moveOutletAreasToWard(id, updateOutletDto.wardId);
+    }
+
     return this.findOne(id);
   }
 
+  // Agents (and their areas) must be moved or deleted first — the outlet has
+  // to be set inactive before its last agent can go. Deleting it with agents
+  // attached used to leave their areas active and orderable.
+  private async assertNoAgents(id: string) {
+    if ((await this.outletIntegrity.countActiveAgents(id)) > 0) {
+      throw new BadRequestException(
+        "Move or delete this outlet's agents first",
+      );
+    }
+  }
+
   async softDelete(id: string) {
-    await this.staffRepository.update({ outletId: id }, { isDeleted: true });
+    await this.assertNoAgents(id);
     return this.outletRepository.update(id, { isDeleted: true });
   }
 
   async hardDelete(id: string) {
-    await this.staffRepository.delete({ outletId: id });
+    await this.assertNoAgents(id);
     return this.outletRepository.delete(id);
   }
 }

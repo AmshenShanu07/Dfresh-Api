@@ -295,6 +295,13 @@ Each measurement family has its own wording so the sentence reads naturally in a
 | `agentContact` | The phone line inside that block | `{{agentPhone}}` |
 | `billCaption` | Caption on the bill PDF | `{{orderNumber}}` |
 
+### `delivery`
+
+| Key | Where it shows | Placeholders |
+|---|---|---|
+| `otp` | Delivery OTP sent when the agent taps "Send OTP" | `{{orderNumber}}`, `{{otp}}` |
+| `delivered` | Sent once the agent verifies the OTP and the order is delivered | `{{itemCount}}`, `{{orderNumber}}` |
+
 ### `availability`
 
 | Key | Where it shows | Placeholders |

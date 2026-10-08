@@ -116,6 +116,7 @@ export const MESSAGE_LIMITS: Record<string, FieldKind> = {
   'outlet.changeRow': 'rowTitle',
   'outlet.selected': 'body',
   'outlet.addressFirst': 'body',
+  'outlet.notServiceable': 'body',
 
   'address.wardListHeader': 'header',
   'address.wardListBody': 'body',

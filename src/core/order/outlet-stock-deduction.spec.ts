@@ -57,8 +57,15 @@ class FakeOutletRepository {
     return this.row;
   }
   // findSellingOutletsForWard — the ward fallback lists selling outlets.
-  async find(_opts: any) {
-    return this.row ? [this.row] : [];
+  createQueryBuilder() {
+    const rows = this.row ? [this.row] : [];
+    const chain: any = {
+      where: () => chain,
+      andWhere: () => chain,
+      orderBy: () => chain,
+      getMany: async () => rows,
+    };
+    return chain;
   }
 }
 

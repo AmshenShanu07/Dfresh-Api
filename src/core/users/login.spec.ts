@@ -46,6 +46,7 @@ function buildService(rows: any[]) {
     jwtService as any,
     null as any,
     null as any,
+    null as any, // outletIntegrity
   );
 }
 

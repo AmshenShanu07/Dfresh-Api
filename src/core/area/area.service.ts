@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { Area } from './entities/area.entity';
 import { Outlets } from '../outlet/entities/outlet.entity';
 import { LocalizedText } from '../../common/utils/localized-text';
@@ -8,6 +8,17 @@ import { LocalizedText } from '../../common/utils/localized-text';
 export interface AreaInput {
   id?: string;
   name: LocalizedText;
+}
+
+/**
+ * Areas the reconcile below would actually keep or create — it silently skips
+ * rows missing either language. Every outlet agent must cover at least one,
+ * since an Area pick is what assigns the delivering agent to an order.
+ */
+export function countValidAreas(areas?: AreaInput[]) {
+  return (areas ?? []).filter(
+    (a) => a.name?.en?.trim() && a.name?.ml?.trim(),
+  ).length;
 }
 
 @Injectable()
@@ -30,8 +41,18 @@ export class AreaService {
     userId: string,
     outletId: string,
     areas: AreaInput[] = [],
+    manager?: EntityManager,
   ) {
-    const outlet = await this.outletRepository.findOne({
+    // `manager` lets outlet creation write the agent's areas inside its own
+    // transaction, so a failure leaves no half-created outlet behind.
+    const areaRepository = manager
+      ? manager.getRepository(Area)
+      : this.areaRepository;
+    const outletRepository = manager
+      ? manager.getRepository(Outlets)
+      : this.outletRepository;
+
+    const outlet = await outletRepository.findOne({
       where: { id: outletId },
     });
     if (!outlet) {
@@ -43,7 +64,7 @@ export class AreaService {
       );
     }
 
-    const existing = await this.areaRepository.find({
+    const existing = await areaRepository.find({
       where: { userId, isDeleted: false },
     });
 
@@ -52,13 +73,13 @@ export class AreaService {
     );
     const toRemove = existing.filter((a) => !submittedIds.has(a.id));
     if (toRemove.length) {
-      await this.areaRepository.update(
+      await areaRepository.update(
         { id: In(toRemove.map((a) => a.id)) },
         { isDeleted: true, isActive: false },
       );
     }
 
-    const currentOutletAreas = await this.areaRepository.find({
+    const currentOutletAreas = await areaRepository.find({
       where: { outletId, isDeleted: false },
     });
     const namesInUse = new Map(
@@ -83,10 +104,10 @@ export class AreaService {
       namesInUse.set(name.en.toLowerCase(), entry.id ?? name.en);
 
       if (entry.id) {
-        await this.areaRepository.update(entry.id, { name });
+        await areaRepository.update(entry.id, { name });
       } else {
-        await this.areaRepository.save(
-          this.areaRepository.create({
+        await areaRepository.save(
+          areaRepository.create({
             name,
             wardId: outlet.wardId,
             outletId: outlet.id,
@@ -97,7 +118,10 @@ export class AreaService {
       }
     }
 
-    return this.findByUser(userId);
+    return areaRepository.find({
+      where: { userId, isDeleted: false },
+      order: { createdAt: 'ASC' },
+    });
   }
 
   findByUser(userId: string) {
@@ -123,6 +147,17 @@ export class AreaService {
     return this.areaRepository.findOne({
       where: { id, isActive: true, isDeleted: false },
     });
+  }
+
+  /**
+   * An outlet's areas follow it when its ward changes — an area is a
+   * sub-division of the ward its outlet serves.
+   */
+  async moveOutletAreasToWard(outletId: string, wardId: string) {
+    await this.areaRepository.update(
+      { outletId, isDeleted: false },
+      { wardId },
+    );
   }
 
   async deactivateAreasForUser(userId: string) {

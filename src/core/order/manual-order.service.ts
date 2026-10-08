@@ -98,12 +98,10 @@ export class ManualOrderService {
 
   /**
    * The outlet a manual order is fulfilled from: the ward's only selling
-   * outlet, or the one staff picked when there are several. Null when no
-   * outlet sells into the ward (stock is then taken from the master only).
+   * outlet, or the one staff picked when there are several. A ward no outlet
+   * sells into can't take orders — there is no stock source or agent.
    */
-  private async resolveOutletId(
-    dto: CreateManualOrderDto,
-  ): Promise<string | null> {
+  private async resolveOutletId(dto: CreateManualOrderDto): Promise<string> {
     const outlets = await this.orderService.findSellingOutletsForWard(
       dto.wardId,
     );
@@ -112,7 +110,9 @@ export class ManualOrderService {
         'Select an outlet that sells in the chosen ward.',
       );
     }
-    if (outlets.length === 0) return null;
+    if (outlets.length === 0) {
+      throw new BadRequestException('No outlet delivers to this ward.');
+    }
     if (outlets.length === 1) return outlets[0].id;
     if (!dto.outletId) {
       throw new BadRequestException(
@@ -206,32 +206,30 @@ export class ManualOrderService {
       throw new BadRequestException('Select a valid ward.');
     }
 
-    // An area is optional — not every ward has them configured, and the
-    // WhatsApp flow already tolerates that by leaving the agent unassigned for
-    // dispatch-time picking. But an area that IS supplied must be active and
-    // belong to the chosen ward, or the order would route to an agent who does
-    // not serve the address.
+    // An area is required: every selling outlet has agents covering areas,
+    // and the area pick is what assigns the delivering agent. It must be
+    // active and belong to the chosen ward, or the order would route to an
+    // agent who does not serve the address.
     const outletId = await this.resolveOutletId(dto);
 
-    let areaId: string | null = null;
-    let deliveryAgentId: string | null = null;
-    if (dto.areaId) {
-      const area = await this.areaService.findOneActive(dto.areaId);
-      if (!area || area.wardId !== dto.wardId) {
-        throw new BadRequestException(
-          'Select an active area belonging to the chosen ward.',
-        );
-      }
-      // The area's agent delivers; they must belong to the outlet whose stock
-      // is used.
-      if (outletId && area.outletId !== outletId) {
-        throw new BadRequestException(
-          'Select an area served by the chosen outlet.',
-        );
-      }
-      areaId = area.id;
-      deliveryAgentId = area.userId;
+    if (!dto.areaId) {
+      throw new BadRequestException('Select the delivery area.');
     }
+    const area = await this.areaService.findOneActive(dto.areaId);
+    if (!area || area.wardId !== dto.wardId) {
+      throw new BadRequestException(
+        'Select an active area belonging to the chosen ward.',
+      );
+    }
+    // The area's agent delivers; they must belong to the outlet whose stock
+    // is used.
+    if (area.outletId !== outletId) {
+      throw new BadRequestException(
+        'Select an area served by the chosen outlet.',
+      );
+    }
+    const areaId: string = area.id;
+    const deliveryAgentId: string = area.userId;
 
     const variantIds = dto.items.map((item) => item.variantId);
     const variants = await this.productVariantRepository.find({
