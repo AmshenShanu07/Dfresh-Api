@@ -152,6 +152,25 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     removeListSection: 'Cart Items',
     removeRowPrice: '₹{{lineTotal}}',
     itemRemoved: 'Item removed from your cart.',
+    // Checkout re-checks the cart against the catalog and the chosen outlet's
+    // stock; {{items}} is one "• Product" line per removed product.
+    itemsOutOfStock:
+      'Sorry, these items are no longer available in the quantity in your cart and were removed:\n{{items}}\n\nPlease review your cart.',
+  },
+
+  // Shown when the customer's ward has more than one selling outlet.
+  outlet: {
+    listHeader: 'Choose your outlet',
+    listBody:
+      'More than one Daily Fresh outlet serves your area. Pick the outlet you want to buy from — we will show what it has in stock.',
+    listButton: 'Select Outlet',
+    listSection: 'Outlets',
+    // Extra row in the category list to switch outlet.
+    changeRow: 'Change outlet',
+    selected: 'You are now shopping from {{outlet}}.',
+    // Sent before the ward list when a customer with no saved address browses.
+    addressFirst:
+      'Please add your delivery address first, so we can show you what is available near you.',
   },
 
   address: {
@@ -168,6 +187,10 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     areaListButton: 'Select Area',
     areaListSection: 'Areas',
     areaListMore: 'More areas',
+    // Body of the area list re-sent when a saved address points at an area
+    // that has since been removed (the header/button reuse areaList*).
+    areaRepickBody:
+      'The area saved with your address is no longer served. Please choose your area again to continue.',
     flowPrompt: 'Please share your delivery address',
     flowButton: 'Enter Address',
     confirm:

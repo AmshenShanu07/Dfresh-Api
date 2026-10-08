@@ -234,6 +234,16 @@ Each measurement family has its own wording so the sentence reads naturally in a
 | `removeListHeader` / `removeListBody` / `removeListButton` / `removeListSection` | The "remove an item" list | — |
 | `removeRowPrice` | Price under each removable row | `{{lineTotal}}` |
 | `itemRemoved` | Confirmation after removing | — |
+| `itemsOutOfStock` | Sent at checkout when some cart items can no longer be covered by the catalog or the chosen outlet's stock | `{{items}}` — one `• Product` line per removed product |
+
+### `outlet` — choosing an outlet when a ward has more than one
+
+| Key | Where it shows | Placeholders |
+|---|---|---|
+| `listHeader` / `listBody` / `listButton` / `listSection` | The outlet picker | — |
+| `changeRow` | Extra row in the category list to switch outlet | — |
+| `selected` | Confirmation after picking an outlet | `{{outlet}}` |
+| `addressFirst` | Sent before the ward list when a customer with no saved address taps View Products | — |
 
 ### `address`
 
@@ -244,6 +254,7 @@ Each measurement family has its own wording so the sentence reads naturally in a
 | `wardRowNamed` | A ward row that has a name | `{{wardName}}`, `{{wardNumber}}` |
 | `wardRowUnnamed` | A ward row with only a number | `{{wardNumber}}` |
 | `wardRowDescription` | Grey line under a ward | `{{localBodyName}}`, `{{districtName}}` |
+| `areaRepickBody` | Body of the area list re-sent when a saved address's area has been removed | — |
 | `flowPrompt` | Text above the address form | — |
 | `flowButton` | Button that opens the form | — |
 | `confirm` | Asking a returning customer to confirm their saved address | `{{name}}`, `{{address}}`, `{{pinCode}}`, `{{phone}}` |

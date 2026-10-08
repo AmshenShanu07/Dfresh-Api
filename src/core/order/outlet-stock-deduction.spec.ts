@@ -30,6 +30,9 @@ class FakeShareCatalogRepository {
   async findOne() {
     return null;
   }
+  async find() {
+    return [];
+  }
 }
 
 class FakeProductRepository {
@@ -52,6 +55,10 @@ class FakeOutletRepository {
   constructor(private row: any) {}
   async findOne(_opts: any) {
     return this.row;
+  }
+  // findSellingOutletsForWard — the ward fallback lists selling outlets.
+  async find(_opts: any) {
+    return this.row ? [this.row] : [];
   }
 }
 
@@ -173,6 +180,67 @@ describe('applyStockDeduction resolves and credits the fulfilling outlet', () =>
     });
 
     await service.applyStockDeduction('order-1');
+
+    expect(orderRepo.row!.outletId).toBeNull();
+    expect(outletStockService.applied).toEqual([]);
+  });
+});
+
+describe('attachFulfillingOutlet backfills the outlet after the address step', () => {
+  // WhatsApp checkout reserves stock before any ward/area is known, so the
+  // outlet resolves to null at deduction time and the outlet ledger is skipped.
+  it('resolves the outlet from the area chosen later and applies the skipped consumption', async () => {
+    const { service, orderRepo, outletStockService } = buildService({
+      row: {
+        id: 'order-1',
+        stockDeducted: true,
+        wardId: 'ward-1',
+        areaId: 'area-1',
+        outletId: null,
+        orderItems,
+      } as any,
+      area: { id: 'area-1', outletId: 'outlet-from-area' },
+    });
+
+    await service.attachFulfillingOutlet('order-1');
+
+    expect(orderRepo.row!.outletId).toBe('outlet-from-area');
+    expect(outletStockService.applied).toEqual([
+      { outletId: 'outlet-from-area', productId: 'product-1', baseQty: 1000 },
+    ]);
+  });
+
+  it('does nothing when an outlet is already recorded', async () => {
+    const { service, orderRepo, outletStockService } = buildService({
+      row: {
+        id: 'order-1',
+        stockDeducted: true,
+        wardId: 'ward-1',
+        outletId: 'outlet-original',
+        orderItems,
+      } as any,
+      outlet: { id: 'outlet-from-ward' },
+    });
+
+    await service.attachFulfillingOutlet('order-1');
+
+    expect(orderRepo.row!.outletId).toBe('outlet-original');
+    expect(outletStockService.applied).toEqual([]);
+  });
+
+  it('does nothing when stock was never deducted', async () => {
+    const { service, orderRepo, outletStockService } = buildService({
+      row: {
+        id: 'order-1',
+        stockDeducted: false,
+        wardId: 'ward-1',
+        outletId: null,
+        orderItems,
+      } as any,
+      outlet: { id: 'outlet-from-ward' },
+    });
+
+    await service.attachFulfillingOutlet('order-1');
 
     expect(orderRepo.row!.outletId).toBeNull();
     expect(outletStockService.applied).toEqual([]);

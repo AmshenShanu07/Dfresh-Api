@@ -466,7 +466,13 @@ export class UsersService {
       }
 
       if (staff) {
-        await this.staffRepository.update(staff.id, { outletId });
+        // Clear isDeleted too: soft-deleting an outlet flags its Staff rows,
+        // and an agent moved off that outlet kept the flag, dropping them from
+        // their new outlet's delivery-agent list.
+        await this.staffRepository.update(staff.id, {
+          outletId,
+          isDeleted: false,
+        });
       } else {
         await this.staffRepository.save(
           this.staffRepository.create({ userId, outletId }),

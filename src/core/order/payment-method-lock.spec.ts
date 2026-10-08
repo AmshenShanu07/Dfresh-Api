@@ -35,6 +35,9 @@ class FakeShareCatalogRepository {
   async findOne() {
     return null;
   }
+  async find() {
+    return [];
+  }
   async update() {
     return { affected: 0 } as any;
   }

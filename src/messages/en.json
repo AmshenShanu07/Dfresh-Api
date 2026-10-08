@@ -86,6 +86,15 @@
     "buttonCancel": "Cancel",
     "cancelled": "No problem — here are the products again"
   },
+  "outlet": {
+    "listHeader": "Choose your outlet",
+    "listBody": "More than one Daily Fresh outlet serves your area. Pick the outlet you want to buy from — we will show what it has in stock.",
+    "listButton": "Select Outlet",
+    "listSection": "Outlets",
+    "changeRow": "Change outlet",
+    "selected": "You are now shopping from {{outlet}}.",
+    "addressFirst": "Please add your delivery address first, so we can show you what is available near you."
+  },
   "cart": {
     "summary": "🛒 *My Daily Cart*\n\n{{lines}}\n\nTotal Items: {{totalQuantity}}\n*Total Amount: ₹{{grandTotal}}*",
     "line": "• {{label}} — ₹{{lineTotal}}",
@@ -107,7 +116,8 @@
     "removeListButton": "Remove",
     "removeListSection": "Cart Items",
     "removeRowPrice": "₹{{lineTotal}}",
-    "itemRemoved": "Item removed from the cart"
+    "itemRemoved": "Item removed from the cart",
+    "itemsOutOfStock": "Sorry, these items are no longer available in the quantity in your cart and were removed:\n{{items}}\n\nPlease review your cart."
   },
   "address": {
     "wardListHeader": "Select Your Ward",
@@ -127,7 +137,8 @@
     "flowButton": "Enter Address",
     "confirm": "Please verify your delivery address:\n\nName: {{name}}\nAddress: {{address}}\nLandmark: {{landmark}}\nPincode: {{pincode}}\nPhone: {{phone}}\n\nIs this correct?",
     "buttonConfirm": "Confirm Address",
-    "buttonAddNew": "Add New Address"
+    "buttonAddNew": "Add New Address",
+    "areaRepickBody": "The area saved with your address is no longer served. Please choose your area again to continue."
   },
   "payment": {
     "prompt": "Your order is ready!\n\n*Total Amount: ₹{{amount}}*\n\nChoose payment method:",
@@ -159,6 +170,9 @@
     "agentBlock": "\n*Delivery Agent:* {{agentName}}{{agentContact}}\n",
     "agentContact": "\n*Contact Number:* {{agentPhone}}",
     "billCaption": "🧾 Your Invoice for the order {{orderNumber}}"
+  },
+  "delivery": {
+    "otp": "🔐 Your Daily Fresh delivery OTP for order *#{{orderNumber}}* is *{{otp}}*.\n\nShare this with the delivery agent to confirm you received your order."
   },
   "availability": {
     "outOfStock": "All products are currently out of stock. Please try after some time",

@@ -25,7 +25,9 @@ import {
   PaymentStatus,
   ShareCatalogStatus,
   UserTypes,
+  ENABLED_STATUSES,
 } from 'src/common/enums';
+import { computeCurrentWindowStart } from '../share-catlaog/share-catlaog.window';
 import { AreaService } from '../area/area.service';
 import { OutletStockService } from '../outlet-stock/outlet-stock.service';
 import {
@@ -104,16 +106,16 @@ export class OrderService {
     await this.orderDetailsRepository.update(orderId, { stockDeducted: true });
 
     // Resolve once and persist, so a later restoreStock credits the same
-    // outlet even if the order's ward/area or the outlet layout changes.
-    const outletId = await this.resolveFulfillingOutletId(order);
-    if (outletId) {
+    // outlet even if the order's ward/area or the outlet layout changes. An
+    // outlet chosen up front (WhatsApp outlet picker, manual-order selector)
+    // is already on the order and always wins.
+    const outletId =
+      order.outletId ?? (await this.resolveFulfillingOutletId(order));
+    if (outletId && !order.outletId) {
       await this.orderDetailsRepository.update(orderId, { outletId });
     }
 
-    const live = await this.shareCatalogRepository.findOne({
-      where: { status: ShareCatalogStatus.LIVE, isDeleted: false },
-      relations: { ShareCatalogProductStock: true },
-    });
+    const live = await this.findSellingCatalog();
 
     // Remember which catalog the stock was taken from so a later cancel /
     // expiry can credit the correct catalog even if a different one is LIVE then.
@@ -162,6 +164,68 @@ export class OrderService {
     }
   }
 
+  /**
+   * The catalog an order is being sold from, using the same rule as the
+   * WhatsApp flow (WhatsappService.getOpenCatalog): ACTIVE or LIVE with its
+   * day/time window open now. Looking only for LIVE missed the window where
+   * the cron has not yet flipped an in-window ACTIVE catalog to LIVE (or never
+   * will, once lastWindowOpenedAt already covers this window) — customers could
+   * still order, but the catalog allocation was never deducted. LIVE wins if
+   * both somehow match.
+   */
+  private async findSellingCatalog() {
+    const catalogs = await this.shareCatalogRepository.find({
+      where: { status: In(ENABLED_STATUSES), isDeleted: false },
+      relations: { ShareCatalogProductStock: true },
+    });
+    const now = new Date();
+    const open = catalogs.filter((c) =>
+      computeCurrentWindowStart(now, c.daysOfWeek, c.startTime, c.endTime),
+    );
+    return (
+      open.find((c) => c.status === ShareCatalogStatus.LIVE) ?? open[0] ?? null
+    );
+  }
+
+  /**
+   * WhatsApp orders reserve stock at checkout (createOrder), before the
+   * customer has picked a ward/area, so applyStockDeduction resolves no outlet
+   * and every later confirm-time call is a no-op on stockDeducted. Called once
+   * the address step has written wardId/areaId: resolves the outlet, persists
+   * it and applies the outlet-ledger consumption that was skipped, keeping the
+   * debit and the eventual restoreStock credit on the same outlet. No-op when
+   * stock is not yet deducted or an outlet is already recorded.
+   */
+  async attachFulfillingOutlet(orderId: string) {
+    const order = await this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+      relations: { orderItems: { variant: true } },
+    });
+    if (!order || !order.stockDeducted || order.outletId) return;
+
+    const outletId = await this.resolveFulfillingOutletId(order);
+    if (!outletId) return;
+
+    // Conditional on outletId still being null so a duplicate address submit
+    // can't apply the outlet consumption twice.
+    const result = await this.orderDetailsRepository.update(
+      { id: orderId, outletId: IsNull() },
+      { outletId },
+    );
+    if (!result.affected) return;
+
+    for (const item of order.orderItems ?? []) {
+      const weight = item.variant?.weight ?? 0;
+      const grams = weight * (item.quantity ?? 0);
+      if (grams <= 0) continue;
+      await this.outletStockService.applyOrderConsumption(
+        outletId,
+        item.productId,
+        grams,
+      );
+    }
+  }
+
   /** Auto-pauses the live catalog when no product fits its remaining stock. */
   private async pauseIfExhausted(catalogId: string) {
     const catalog = await this.shareCatalogRepository.findOne({
@@ -171,7 +235,7 @@ export class OrderService {
         ShareCatalogProductStock: true,
       },
     });
-    if (!catalog || catalog.status !== ShareCatalogStatus.LIVE) return;
+    if (!catalog || !ENABLED_STATUSES.includes(catalog.status)) return;
 
     const remainingByProduct = new Map<string, number>();
     for (const s of catalog.ShareCatalogProductStock ?? []) {
@@ -292,7 +356,16 @@ export class OrderService {
     return { cancelled: stale.length };
   }
 
-  async createOrder(phone: string, products: any[]) {
+  /**
+   * `outletId` is the outlet the customer shopped from (resolved before
+   * browsing in WhatsappService); null when their ward has no selling outlet,
+   * in which case the outlet is derived from the address later.
+   */
+  async createOrder(
+    phone: string,
+    products: any[],
+    outletId: string | null = null,
+  ) {
     try {
       const user = await this.userRepository.findOne({
         where: { phone, userType: UserTypes.CUSTOMER },
@@ -304,6 +377,7 @@ export class OrderService {
         this.orderDetailsRepository.create({
           userId: user.id,
           status: OrderStatus.DRAFT,
+          outletId,
           totalAmount: products.reduce((acc, product) => {
             const addOns =
               parseFloat(product.cleaningCharge ?? 0) +
@@ -556,11 +630,34 @@ export class OrderService {
     }
     if (!order.wardId) return null;
 
-    const outlet = await this.outletRepository.findOne({
-      where: { wardId: order.wardId, isDeleted: false },
+    const [outlet] = await this.findSellingOutletsForWard(order.wardId);
+    return outlet?.id ?? null;
+  }
+
+  /** The outlet recorded on an order, or null when none is recorded yet. */
+  async getOrderOutlet(orderId: string): Promise<Outlets | null> {
+    const order = await this.orderDetailsRepository.findOne({
+      where: { id: orderId },
+      relations: { outlet: true },
+    });
+    return order?.outlet ?? null;
+  }
+
+  /**
+   * Outlets a customer in this ward can buy from: active, not deleted and with
+   * Enable Sales on, oldest first. One → it serves the ward automatically;
+   * two or more → the customer (or admin, for manual orders) chooses.
+   */
+  findSellingOutletsForWard(wardId: string) {
+    return this.outletRepository.find({
+      where: {
+        wardId,
+        isDeleted: false,
+        isActive: true,
+        isSalesEnabled: true,
+      },
       order: { createdAt: 'ASC' },
     });
-    return outlet?.id ?? null;
   }
 
   /**
@@ -578,7 +675,11 @@ export class OrderService {
       return { outletId: null, agents: [] };
     }
 
-    const outletId = await this.resolveFulfillingOutletId(order);
+    // The order's own outlet first: once an outlet is recorded, agents must
+    // come from it, not from a re-derivation that can pick a sibling outlet
+    // in a multi-outlet ward.
+    const outletId =
+      order.outletId ?? (await this.resolveFulfillingOutletId(order));
     if (!outletId) {
       return { outletId: null, agents: [] };
     }
@@ -759,6 +860,7 @@ export class OrderService {
         ...(addressData.wardId ? { wardId: addressData.wardId } : {}),
         ...areaAssignment,
       });
+      await this.attachFulfillingOutlet(addressData.flow_token);
 
       const order = await this.orderDetailsRepository.findOne({
         where: { id: addressData.flow_token },
@@ -802,6 +904,7 @@ export class OrderService {
         ...(address.wardId ? { wardId: address.wardId } : {}),
         ...areaAssignment,
       });
+      await this.attachFulfillingOutlet(orderId);
 
       const order = await this.orderDetailsRepository.findOne({
         where: { id: orderId },

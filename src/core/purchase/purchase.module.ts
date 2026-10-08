@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PurchaseService } from './purchase.service';
 import { PurchaseController } from './purchase.controller';
+import { StockLevelService } from './stock-level.service';
 import { JwtService } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Purchase } from './entities/purchase.entity';
@@ -15,6 +16,6 @@ import { OutletStockModule } from '../outlet-stock/outlet-stock.module';
     OutletStockModule,
   ],
   controllers: [PurchaseController],
-  providers: [PurchaseService, JwtService],
+  providers: [PurchaseService, StockLevelService, JwtService],
 })
 export class PurchaseModule {}

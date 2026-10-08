@@ -14,6 +14,8 @@ import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { CleaningDetailsDto } from './dto/cleaning-details.dto';
 import { ThresholdLevelDto } from './dto/thereshold-level.dto';
+import { StockLevelFilterDto } from './dto/stock-level-filter.dto';
+import { StockLevelService } from './stock-level.service';
 import { FilterCommonDto } from 'src/common/dto/filter.dto';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { UserAuthGuard } from 'src/guards/user.guard';
@@ -23,7 +25,10 @@ import { UserTypes } from 'src/common/enums';
 
 @Controller('purchase')
 export class PurchaseController {
-  constructor(private readonly purchaseService: PurchaseService) {}
+  constructor(
+    private readonly purchaseService: PurchaseService,
+    private readonly stockLevelService: StockLevelService,
+  ) {}
 
   @ApiBearerAuth()
   @UseGuards(UserAuthGuard)
@@ -44,6 +49,23 @@ export class PurchaseController {
   @Get('/list')
   getList(@Query() filter: FilterCommonDto) {
     return this.purchaseService.getList(filter);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
+  @Get('stock-level')
+  getStockLevel(@Query() filter: StockLevelFilterDto) {
+    return this.stockLevelService.getList(filter);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
+  @Put('stock-level/:productId/threshold')
+  setStockThreshold(
+    @Param('productId') productId: string,
+    @Body() threshold: ThresholdLevelDto,
+  ) {
+    return this.stockLevelService.setThreshold(productId, threshold);
   }
 
   @ApiBearerAuth()

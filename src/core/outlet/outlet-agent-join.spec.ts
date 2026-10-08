@@ -96,3 +96,33 @@ describe('OutletService.create — Staff join row', () => {
     expect(staffRepo.rows).toHaveLength(0);
   });
 });
+
+describe('OutletService.create — isSalesEnabled', () => {
+  // `create()` used to drop `isSalesEnabled`, so the column default (false)
+  // won and every new outlet landed disabled regardless of the checkbox.
+  async function savedOutlet(isSalesEnabled: boolean) {
+    const outletRepo = new FakeOutletRepository();
+    const saveSpy = jest.spyOn(outletRepo, 'save');
+    const service = new OutletService(
+      outletRepo as unknown as Repository<Outlets>,
+      new FakeStaffRepository() as unknown as Repository<Staff>,
+      {
+        async findOne(_opts: any) {
+          return null;
+        },
+      } as unknown as Repository<User>,
+    );
+
+    await service.create({ ...dto(undefined), isSalesEnabled });
+
+    return saveSpy.mock.calls[0][0];
+  }
+
+  it('persists isSalesEnabled = true from the DTO', async () => {
+    expect((await savedOutlet(true)).isSalesEnabled).toBe(true);
+  });
+
+  it('persists isSalesEnabled = false from the DTO', async () => {
+    expect((await savedOutlet(false)).isSalesEnabled).toBe(false);
+  });
+});

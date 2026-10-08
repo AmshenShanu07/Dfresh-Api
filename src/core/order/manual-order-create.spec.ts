@@ -97,6 +97,10 @@ class FakeAreaService {
 
 class FakeOrderService {
   deducted: string[] = [];
+  constructor(private outlets: any[] = []) {}
+  async findSellingOutletsForWard() {
+    return this.outlets;
+  }
   async applyStockDeduction(orderId: string) {
     this.deducted.push(orderId);
   }
@@ -110,15 +114,19 @@ function buildService({
   variants = [variantRow],
   ward = { id: '22222222-2222-2222-2222-222222222222' },
   area = null,
+  outlets = [],
+  outletStock = {},
 }: {
   existingUser?: any;
   variants?: any[];
   ward?: any;
   area?: any;
+  outlets?: any[];
+  outletStock?: Record<string, number>;
 } = {}) {
   const manager = new FakeEntityManager(existingUser);
   const dataSource = new FakeDataSource(manager);
-  const orderService = new FakeOrderService();
+  const orderService = new FakeOrderService(outlets);
   const service = new ManualOrderService(
     dataSource as any,
     {} as any, // userRepository — creation goes through the transaction manager
@@ -128,6 +136,11 @@ function buildService({
     new FakeWardRepository(ward) as any,
     new FakeAreaService(area) as any,
     orderService as any,
+    {
+      async getStockMap() {
+        return new Map(Object.entries(outletStock));
+      },
+    } as any, // outletStockService
   );
   return { service, manager, orderService };
 }
@@ -297,5 +310,87 @@ describe('ManualOrderService.create', () => {
 
     const [order] = manager.rowsFor(OrderDetails);
     expect(orderService.deducted).toEqual([order.id]);
+  });
+});
+
+describe('ManualOrderService.create — fulfilling outlet', () => {
+  const outletA = {
+    id: '33333333-3333-3333-3333-33333333333a',
+    name: 'Outlet A',
+  };
+  const outletB = {
+    id: '33333333-3333-3333-3333-33333333333b',
+    name: 'Outlet B',
+  };
+  // variantRow has no weight in the shared fixture; give it 1 kg.
+  const variants = [
+    { ...variantRow, weight: 1000, product: { name: { en: 'Pearl Spot' } } },
+  ];
+
+  it("uses the ward's only selling outlet without asking", async () => {
+    const { service, manager } = buildService({
+      variants,
+      outlets: [outletA],
+      outletStock: { 'product-1': 5000 },
+    });
+
+    await service.create(baseDto() as any);
+
+    expect(manager.rowsFor(OrderDetails)[0].outletId).toBe(outletA.id);
+  });
+
+  it('requires a choice when the ward has several selling outlets', async () => {
+    const { service } = buildService({ variants, outlets: [outletA, outletB] });
+
+    await expect(service.create(baseDto() as any)).rejects.toThrow(
+      'more than one outlet',
+    );
+  });
+
+  it('records the chosen outlet in a multi-outlet ward', async () => {
+    const { service, manager } = buildService({
+      variants,
+      outlets: [outletA, outletB],
+      outletStock: { 'product-1': 5000 },
+    });
+
+    await service.create({ ...baseDto(), outletId: outletB.id } as any);
+
+    expect(manager.rowsFor(OrderDetails)[0].outletId).toBe(outletB.id);
+  });
+
+  it('rejects an order the outlet cannot cover and names the product', async () => {
+    // 2 × 1 kg against 1.5 kg at the outlet.
+    const { service } = buildService({
+      variants,
+      outlets: [outletA],
+      outletStock: { 'product-1': 1500 },
+    });
+
+    await expect(service.create(baseDto() as any)).rejects.toThrow(
+      'Out of stock at the selected outlet: Pearl Spot.',
+    );
+  });
+
+  it('rejects an area owned by a different outlet', async () => {
+    const { service } = buildService({
+      variants,
+      outlets: [outletA, outletB],
+      outletStock: { 'product-1': 5000 },
+      area: {
+        id: '44444444-4444-4444-4444-444444444444',
+        wardId: '22222222-2222-2222-2222-222222222222',
+        outletId: outletA.id,
+        userId: 'agent-a',
+      },
+    });
+
+    await expect(
+      service.create({
+        ...baseDto(),
+        outletId: outletB.id,
+        areaId: '44444444-4444-4444-4444-444444444444',
+      } as any),
+    ).rejects.toThrow('Select an area served by the chosen outlet.');
   });
 });

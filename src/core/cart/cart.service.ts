@@ -103,6 +103,24 @@ export class CartService {
     return this.getCart(phone);
   }
 
+  /** The outlet the customer chose to shop from, or null. */
+  async getChosenOutletId(phone: string): Promise<string | null> {
+    const user = await this.getCustomerByPhone(phone);
+    if (!user) return null;
+    const cart = await this.cartRepository.findOne({
+      where: { userId: user.id },
+    });
+    return cart?.outletId ?? null;
+  }
+
+  /** Records the outlet the customer chose from the outlet picker. */
+  async setChosenOutlet(phone: string, outletId: string): Promise<void> {
+    const user = await this.getCustomerByPhone(phone);
+    if (!user) return;
+    const cart = await this.getOrCreateCart(user.id);
+    await this.cartRepository.update(cart.id, { outletId });
+  }
+
   /** Deletes all items in a cart (called after the cart is converted to an order). */
   async clearCart(cartId: string): Promise<void> {
     await this.cartItemRepository.delete({ cartId });

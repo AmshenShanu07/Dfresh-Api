@@ -487,19 +487,20 @@ export class ProductService {
     const existing = await this.productRepository.findOne({ where: { id } });
     if (!existing) throw new BadRequestException('Product not found');
 
-    // Stock is stored in the product's base unit; convert from the supplied
-    // display unit. Strip fields that need special handling so they aren't
-    // blindly assigned.
+    // Strip fields that need special handling so they aren't blindly assigned.
+    // Stock is deliberately NOT editable here: the edit form submitted the
+    // absolute amount it loaded, so every product/variant save silently undid
+    // any order deducted since the page opened. Stock now moves only through
+    // purchases (and purchase edit), orders and outlet transfers.
     const prevMeasurementType = existing.measurementType;
-    const { totalQuantity, totalQuantityUnit, cuttingStyleIds, variants, ...rest } =
-      updateProductDto;
+    const {
+      totalQuantity: _ignoredStock,
+      totalQuantityUnit: _ignoredStockUnit,
+      cuttingStyleIds,
+      variants,
+      ...rest
+    } = updateProductDto;
     Object.assign(existing, rest);
-    if (totalQuantity != null) {
-      const stockUnit = (totalQuantityUnit ??
-        baseUnitFor(existing.measurementType)) as Unit;
-      this.validateUnitForType(existing.measurementType, stockUnit, totalQuantity);
-      existing.totalQuantity = toBase(totalQuantity, stockUnit);
-    }
 
     const product = await this.productRepository.save(existing);
 

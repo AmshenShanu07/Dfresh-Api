@@ -56,6 +56,14 @@ export class CreateManualOrderDto {
   @IsUUID()
   wardId: string;
 
+  /**
+   * The outlet to fulfil from. Required when the ward has two or more selling
+   * outlets; ignored-but-validated otherwise (a single outlet is implied).
+   */
+  @IsOptional()
+  @IsUUID()
+  outletId?: string | null;
+
   /** Omitted when the ward has no areas configured. */
   @IsOptional()
   @IsUUID()

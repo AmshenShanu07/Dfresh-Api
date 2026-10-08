@@ -140,6 +140,14 @@ export class OutletStockService {
     return { data, total, page, limit };
   }
 
+  /** productId → current stock (base units) for one outlet; absent = 0. */
+  async getStockMap(outletId: string): Promise<Map<string, number>> {
+    const rows = await this.outletProductStockRepository.find({
+      where: { outletId },
+    });
+    return new Map(rows.map((r) => [r.productId, Number(r.quantity) || 0]));
+  }
+
   /** Purchase-in: creates the outlet/product row lazily and increments it. */
   async applyPurchaseIn(outletId: string, productId: string, baseQty: number) {
     await this.upsertDelta(outletId, productId, baseQty);

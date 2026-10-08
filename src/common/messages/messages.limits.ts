@@ -107,6 +107,15 @@ export const MESSAGE_LIMITS: Record<string, FieldKind> = {
   'cart.removeListSection': 'sectionTitle',
   'cart.removeRowPrice': 'rowDescription',
   'cart.itemRemoved': 'body',
+  'cart.itemsOutOfStock': 'body',
+
+  'outlet.listHeader': 'header',
+  'outlet.listBody': 'body',
+  'outlet.listButton': 'actionButton',
+  'outlet.listSection': 'sectionTitle',
+  'outlet.changeRow': 'rowTitle',
+  'outlet.selected': 'body',
+  'outlet.addressFirst': 'body',
 
   'address.wardListHeader': 'header',
   'address.wardListBody': 'body',
@@ -119,6 +128,7 @@ export const MESSAGE_LIMITS: Record<string, FieldKind> = {
   'address.areaListButton': 'actionButton',
   'address.areaListSection': 'sectionTitle',
   'address.areaListMore': 'rowTitle',
+  'address.areaRepickBody': 'body',
   'address.flowPrompt': 'body',
   'address.flowButton': 'actionButton',
   'address.confirm': 'body',

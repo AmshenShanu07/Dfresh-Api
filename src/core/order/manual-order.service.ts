@@ -8,6 +8,8 @@ import { ShareCatalogProducts } from '../share-catlaog/entities/share-catalog-pr
 import { Ward } from '../ward/entities/ward.entity';
 import { AreaService } from '../area/area.service';
 import { OrderService } from './order.service';
+import { OutletStockService } from '../outlet-stock/outlet-stock.service';
+import { localize } from 'src/common/utils/localized-text';
 import {
   OrderDetails,
   OrderItems,
@@ -18,6 +20,7 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  UserLanguage,
   UserTypes,
 } from 'src/common/enums';
 import { normalisePhone } from 'src/common/utils/phone';
@@ -72,7 +75,52 @@ export class ManualOrderService {
     private readonly wardRepository: Repository<Ward>,
     private readonly areaService: AreaService,
     private readonly orderService: OrderService,
+    private readonly outletStockService: OutletStockService,
   ) {}
+
+  /**
+   * Selling outlets for a ward with their current stock, for the manual-order
+   * form's outlet selector (shown when there are two or more) and its
+   * per-outlet stock warnings. `stock` maps productId → base-unit amount.
+   */
+  async getWardOutlets(wardId: string) {
+    const outlets = await this.orderService.findSellingOutletsForWard(wardId);
+    return Promise.all(
+      outlets.map(async (o) => ({
+        id: o.id,
+        name: o.name,
+        stock: Object.fromEntries(
+          await this.outletStockService.getStockMap(o.id),
+        ),
+      })),
+    );
+  }
+
+  /**
+   * The outlet a manual order is fulfilled from: the ward's only selling
+   * outlet, or the one staff picked when there are several. Null when no
+   * outlet sells into the ward (stock is then taken from the master only).
+   */
+  private async resolveOutletId(
+    dto: CreateManualOrderDto,
+  ): Promise<string | null> {
+    const outlets = await this.orderService.findSellingOutletsForWard(
+      dto.wardId,
+    );
+    if (dto.outletId && !outlets.some((o) => o.id === dto.outletId)) {
+      throw new BadRequestException(
+        'Select an outlet that sells in the chosen ward.',
+      );
+    }
+    if (outlets.length === 0) return null;
+    if (outlets.length === 1) return outlets[0].id;
+    if (!dto.outletId) {
+      throw new BadRequestException(
+        'This ward is served by more than one outlet. Select the outlet to fulfil the order from.',
+      );
+    }
+    return dto.outletId;
+  }
 
   /**
    * Everything the manual-order product picker needs, in one call: each
@@ -163,6 +211,8 @@ export class ManualOrderService {
     // dispatch-time picking. But an area that IS supplied must be active and
     // belong to the chosen ward, or the order would route to an agent who does
     // not serve the address.
+    const outletId = await this.resolveOutletId(dto);
+
     let areaId: string | null = null;
     let deliveryAgentId: string | null = null;
     if (dto.areaId) {
@@ -172,6 +222,13 @@ export class ManualOrderService {
           'Select an active area belonging to the chosen ward.',
         );
       }
+      // The area's agent delivers; they must belong to the outlet whose stock
+      // is used.
+      if (outletId && area.outletId !== outletId) {
+        throw new BadRequestException(
+          'Select an area served by the chosen outlet.',
+        );
+      }
       areaId = area.id;
       deliveryAgentId = area.userId;
     }
@@ -179,7 +236,7 @@ export class ManualOrderService {
     const variantIds = dto.items.map((item) => item.variantId);
     const variants = await this.productVariantRepository.find({
       where: { id: In(variantIds), isDeleted: false },
-      relations: { cuttingStyles: true },
+      relations: { cuttingStyles: true, product: true },
     });
     const variantById = new Map(variants.map((v: any) => [v.id, v]));
 
@@ -192,6 +249,10 @@ export class ManualOrderService {
       }
       return resolveManualLine(variant, item);
     });
+
+    if (outletId) {
+      await this.assertOutletCanCover(outletId, dto.items, variantById);
+    }
 
     const totalAmount = manualOrderTotal(lines);
     // UPI is VERIFIED rather than awaiting anything: staff only record a manual
@@ -240,6 +301,7 @@ export class ManualOrderService {
           wardId: dto.wardId,
           areaId,
           deliveryAgentId,
+          outletId,
         }),
       );
 
@@ -281,5 +343,37 @@ export class ManualOrderService {
     await this.orderService.applyStockDeduction(orderId);
 
     return { orderId };
+  }
+
+  /**
+   * Rejects the order when the outlet can't cover a product: the order's total
+   * for it (variant amount × quantity, summed across lines) must fit that
+   * outlet's stock. Names every short product so staff can fix the lines.
+   */
+  private async assertOutletCanCover(
+    outletId: string,
+    items: CreateManualOrderDto['items'],
+    variantById: Map<string, any>,
+  ) {
+    const stock = await this.outletStockService.getStockMap(outletId);
+    const needed = new Map<string, { amount: number; name: string }>();
+    for (const item of items) {
+      const variant = variantById.get(item.variantId);
+      const entry = needed.get(variant.productId) ?? {
+        amount: 0,
+        name: localize(variant.product?.name, UserLanguage.EN) || 'Product',
+      };
+      entry.amount += (variant.weight ?? 0) * item.quantity;
+      needed.set(variant.productId, entry);
+    }
+
+    const short = [...needed]
+      .filter(([productId, { amount }]) => amount > (stock.get(productId) ?? 0))
+      .map(([, { name }]) => name);
+    if (short.length) {
+      throw new BadRequestException(
+        `Out of stock at the selected outlet: ${short.join(', ')}.`,
+      );
+    }
   }
 }

@@ -45,6 +45,13 @@ export class Products {
   @Column({ type: 'float', default: 0 })
   totalQuantity: number;
 
+  /**
+   * Low-stock alert level in the product's base unit (g / ml / count), set
+   * from the Stock Level page. Null when no threshold has been set.
+   */
+  @Column({ type: 'float', nullable: true, default: null })
+  threshold: number | null;
+
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 

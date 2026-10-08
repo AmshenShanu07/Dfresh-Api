@@ -84,6 +84,12 @@ export class OrderController {
     return this.manualOrderService.getPickerProducts();
   }
 
+  /** Selling outlets of a ward with their stock, for the manual-order form. */
+  @Get('manual/outlets')
+  getManualOrderOutlets(@Query('wardId') wardId: string) {
+    return this.manualOrderService.getWardOutlets(wardId);
+  }
+
   /**
    * Creates an admin-entered order. It lands CONFIRMED, so the bill goes out
    * the same way confirmOrder sends it. A send failure — a landline, a number

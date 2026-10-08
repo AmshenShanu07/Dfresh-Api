@@ -61,6 +61,7 @@ describe('WhatsappService.receiveAddress', () => {
       {} as any, // areaService
       {} as any, // invoiceService
       fakeMessagesService as any,
+      {} as any, // outletStockService
     );
 
     // Mock network call methods so they don't hit WhatsApp APIs

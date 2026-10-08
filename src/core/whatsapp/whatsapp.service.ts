@@ -21,6 +21,8 @@ import { UploadService } from '../upload/upload.service';
 import { CartService } from '../cart/cart.service';
 import { WardService } from '../ward/ward.service';
 import { AreaService } from '../area/area.service';
+import { OutletStockService } from '../outlet-stock/outlet-stock.service';
+import { Outlets } from '../outlet/entities/outlet.entity';
 import { MessagesService } from 'src/common/messages/messages.service';
 import { ShareCatalog } from '../share-catlaog/entities/share-catalog.entity';
 import {
@@ -29,12 +31,26 @@ import {
   computeNextWindowStart,
 } from '../share-catlaog/share-catlaog.window';
 import { categoryIdOf, groupEntriesByCategory } from './catalog-grouping';
+import { uncoverableProductIds } from './checkout-stock';
 import { localize } from 'src/common/utils/localized-text';
 
 /** Reply-id code (`setLang~<code>`) → language. Anything else is not a language. */
 const LANGUAGE_BY_CODE: Record<string, UserLanguage> = {
   [UserLanguage.EN]: UserLanguage.EN,
   [UserLanguage.ML]: UserLanguage.ML,
+};
+
+/**
+ * The outlet a customer is shopping against. `stock` is that outlet's
+ * productId → base-unit stock map, or null when no outlet applies (the ward
+ * has no selling outlet, or one wasn't chosen yet) — browsing then checks the
+ * catalog allocation alone.
+ */
+type ShoppingOutlet = {
+  outlet: Outlets | null;
+  stock: Map<string, number> | null;
+  /** Every selling outlet in the customer's ward. */
+  outlets: Outlets[];
 };
 
 @Injectable()
@@ -60,6 +76,7 @@ export class WhatsappService {
     private areaService: AreaService,
     private invoiceService: InvoiceService,
     private messages: MessagesService,
+    private outletStockService: OutletStockService,
   ) {
     this.botToken = this.configService.get<string>('BOT_TOKEN');
     this.tgChatId = this.configService.get<string>('TG_CHAT_ID');
@@ -534,6 +551,23 @@ export class WhatsappService {
           parseInt(parts[0], 10) || 0,
           parts[2],
         );
+      case 'outletList':
+        return this.handleOutletListRequest(phone);
+      case 'pickOutlet':
+        // parts: [outletId]
+        return this.handlePickOutlet(phone, parts[0]);
+      case 'fixArea':
+        // parts: [areaId, orderId]
+        return this.handleRepickArea(phone, parts[0], parts[1]);
+      case 'fixAreaPage':
+        // parts: [page, wardId, orderId]
+        return this.sendAreaList(
+          phone,
+          parts[1],
+          parseInt(parts[0], 10) || 0,
+          parts[2],
+          'repick',
+        );
     }
 
     // Legacy hyphen-prefixed actions (catalog entry / address / payment)
@@ -542,7 +576,10 @@ export class WhatsappService {
     } else if (replyId.startsWith('confirmAddress-')) {
       return this.handleConfirmAddress(phone, replyId.replace('confirmAddress-', ''));
     } else if (replyId.startsWith('addAddress-')) {
-      return this.sendWardList(phone, 0, replyId.replace('addAddress-', ''));
+      return this.handleAddNewAddress(
+        phone,
+        replyId.replace('addAddress-', ''),
+      );
     } else if (replyId.startsWith('selectPaymentCOD-')) {
       return this.handleSelectCOD(phone, replyId.replace('selectPaymentCOD-', ''));
     } else if (replyId.startsWith('selectPaymentUPI-')) {
@@ -618,34 +655,167 @@ export class WhatsappService {
 
   /**
    * A catalog entry (variant) is sellable only when its product still has
-   * enough remaining allocation to cover the variant's weight.
+   * enough remaining allocation to cover the variant's weight — and, when the
+   * customer shops from a specific outlet, enough stock at that outlet too.
+   * Entries failing either are hidden.
    */
-  private isEntrySellable(catalog: any, entry: any): boolean {
+  private isEntrySellable(
+    catalog: any,
+    entry: any,
+    outletStock: Map<string, number> | null = null,
+  ): boolean {
     const remaining = this.remainingGramsFor(catalog, entry.productId);
     const weight = entry.variant?.weight ?? Infinity;
-    return remaining > 0 && weight <= remaining;
+    if (!(remaining > 0 && weight <= remaining)) return false;
+    if (!outletStock) return true;
+    return weight <= (outletStock.get(entry.productId) ?? 0);
   }
 
-  /** Finds the open catalog's entry for a given variant, or null. */
-  private async findCatalogEntry(variantId: string): Promise<any | null> {
+  /**
+   * Finds the open catalog's sellable entry for a given variant, or null.
+   * Mid-wizard steps never prompt for an outlet — the category list already
+   * did, and checkout re-checks everything before an order exists.
+   */
+  private async findCatalogEntry(
+    phone: string,
+    variantId: string,
+  ): Promise<any | null> {
     const catalog = await this.getOpenCatalog();
     if (!catalog) return null;
+    const shopping = await this.resolveShoppingOutlet(phone, false);
+    const stock = shopping === 'prompted' ? null : shopping.stock;
     const entry = (catalog.ShareCatalogProducts ?? []).find(
       (e: any) => e.variantId === variantId && e.variant,
     );
-    if (!entry || !this.isEntrySellable(catalog, entry)) return null;
+    if (!entry || !this.isEntrySellable(catalog, entry, stock)) return null;
     return entry;
   }
 
   /** Sellable entries of the open catalog — the shared basis of both lists. */
-  private sellableEntries(catalog: any): any[] {
+  private sellableEntries(
+    catalog: any,
+    outletStock: Map<string, number> | null = null,
+  ): any[] {
     return (catalog.ShareCatalogProducts ?? []).filter(
       (e: any) =>
         e.variantId &&
         e.variant &&
         e.product &&
-        this.isEntrySellable(catalog, e),
+        this.isEntrySellable(catalog, e, outletStock),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Outlet selection
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Which outlet's stock this customer shops against. Their ward is the one on
+   * their latest saved address. One selling outlet in the ward is used
+   * automatically; with several, the one they picked (kept on their cart).
+   *
+   * With `prompt`, a customer with no saved ward is asked for their address
+   * first, and one in a multi-outlet ward without a valid choice is sent the
+   * outlet picker — both return 'prompted'. Without `prompt` an unresolved
+   * outlet is simply null.
+   */
+  private async resolveShoppingOutlet(
+    phone: string,
+    prompt: boolean,
+  ): Promise<ShoppingOutlet | 'prompted'> {
+    const none: ShoppingOutlet = { outlet: null, stock: null, outlets: [] };
+    const user = await this.userRepository.findOne({ where: { phone } });
+    if (!user) return none;
+
+    const address = await this.userAddressRepository.findOne({
+      where: { userId: user.id },
+      order: { createdAt: 'DESC' },
+    });
+    if (!address?.wardId) {
+      if (!prompt) return none;
+      await this.sendText(phone, this.messages.get('outlet.addressFirst'));
+      await this.sendWardList(phone);
+      return 'prompted';
+    }
+
+    const outlets = await this.orderService.findSellingOutletsForWard(
+      address.wardId,
+    );
+    // A ward no outlet sells into keeps the old behaviour: catalog stock
+    // only, outlet derived from the address after checkout.
+    if (outlets.length === 0) return none;
+
+    let outlet: Outlets | null = outlets.length === 1 ? outlets[0] : null;
+    if (!outlet) {
+      const chosenId = await this.cartService.getChosenOutletId(phone);
+      outlet = outlets.find((o) => o.id === chosenId) ?? null;
+    }
+    if (!outlet) {
+      if (!prompt) return { ...none, outlets };
+      await this.sendOutletList(phone, outlets);
+      return 'prompted';
+    }
+
+    return {
+      outlet,
+      stock: await this.outletStockService.getStockMap(outlet.id),
+      outlets,
+    };
+  }
+
+  /** The outlet picker — one row per selling outlet in the customer's ward. */
+  private async sendOutletList(phone: string, outlets: Outlets[]) {
+    const rows = outlets.slice(0, 10).map((o) => ({
+      id: `pickOutlet~${o.id}`,
+      title: this.truncate(o.name || '—', 24),
+      ...(o.address?.trim()
+        ? { description: this.truncate(o.address.trim(), 72) }
+        : {}),
+    }));
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        header: { type: 'text', text: this.messages.get('outlet.listHeader') },
+        body: { text: this.messages.get('outlet.listBody') },
+        footer: { text: this.messages.get('common.footer') },
+        action: {
+          button: this.messages.get('outlet.listButton'),
+          sections: [{ title: this.messages.get('outlet.listSection'), rows }],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Outlet list sent:', response.data);
+  }
+
+  /** "Change outlet" row in the category list. */
+  private async handleOutletListRequest(phone: string) {
+    const shopping = await this.resolveShoppingOutlet(phone, true);
+    if (shopping === 'prompted') return;
+    if (shopping.outlets.length < 2) return this.sendCategoryList(phone);
+    return this.sendOutletList(phone, shopping.outlets);
+  }
+
+  private async handlePickOutlet(phone: string, outletId: string) {
+    const shopping = await this.resolveShoppingOutlet(phone, false);
+    const outlets = shopping === 'prompted' ? [] : shopping.outlets;
+    const picked = outlets.find((o) => o.id === outletId);
+    // A stale row (outlet disabled, or the customer's ward changed since the
+    // list was sent) — re-resolve, which re-sends a valid picker if needed.
+    if (!picked) return this.sendCategoryList(phone);
+
+    await this.cartService.setChosenOutlet(phone, picked.id);
+    await this.sendText(
+      phone,
+      this.messages.get('outlet.selected', { outlet: picked.name }),
+    );
+    return this.sendCategoryList(phone);
   }
 
   /**
@@ -661,22 +831,31 @@ export class WhatsappService {
     const catalog = await this.getOpenCatalog();
     if (!catalog) return this.sendUnavailableMessage(phone);
 
+    const shopping = await this.resolveShoppingOutlet(phone, true);
+    if (shopping === 'prompted') return;
+    const canChangeOutlet = shopping.outlets.length > 1;
+
     const categories = groupEntriesByCategory(
-      this.sellableEntries(catalog),
+      this.sellableEntries(catalog, shopping.stock),
       this.messages.currentLanguage(),
     );
 
     if (categories.length === 0) {
-      return this.sendOutOfStockMessage(phone);
+      await this.sendOutOfStockMessage(phone);
+      // Another outlet in the ward may still have stock.
+      if (canChangeOutlet) return this.sendOutletList(phone, shopping.outlets);
+      return;
     }
 
-    if (categories.length === 1 && allowAutoSkip) {
-      // Single category — skip the step, and drop the back row it would offer.
+    // Single category — skip the step, and drop the back row it would offer.
+    // Not when the customer can switch outlet: that row lives on this list.
+    if (categories.length === 1 && allowAutoSkip && !canChangeOutlet) {
       return this.sendProductList(phone, categories[0].id, 0, false);
     }
 
-    const LIST_MAX = 10;
-    const PAGE_SIZE = 9;
+    // WhatsApp caps a list at 10 rows; the "Change outlet" row costs one.
+    const LIST_MAX = canChangeOutlet ? 9 : 10;
+    const PAGE_SIZE = LIST_MAX - 1;
     let pageCategories: typeof categories;
     let moreRow = false;
 
@@ -703,6 +882,12 @@ export class WhatsappService {
       rows.push({
         id: `catPage~${page + 1}`,
         title: this.messages.get('category.listMore'),
+      });
+    }
+    if (canChangeOutlet) {
+      rows.push({
+        id: 'outletList',
+        title: this.messages.get('outlet.changeRow'),
       });
     }
 
@@ -741,7 +926,10 @@ export class WhatsappService {
     const catalog = await this.getOpenCatalog();
     if (!catalog) return this.sendUnavailableMessage(phone);
 
-    const entries = this.sellableEntries(catalog).filter(
+    const shopping = await this.resolveShoppingOutlet(phone, true);
+    if (shopping === 'prompted') return;
+
+    const entries = this.sellableEntries(catalog, shopping.stock).filter(
       (e: any) => categoryIdOf(e) === categoryId,
     );
 
@@ -863,12 +1051,15 @@ export class WhatsappService {
     const catalog = await this.getOpenCatalog();
     if (!catalog) return this.sendUnavailableMessage(phone);
 
+    const shopping = await this.resolveShoppingOutlet(phone, true);
+    if (shopping === 'prompted') return;
+
     const entries = (catalog.ShareCatalogProducts ?? []).filter(
       (e: any) =>
         e.productId === productId &&
         e.variantId &&
         e.variant &&
-        this.isEntrySellable(catalog, e),
+        this.isEntrySellable(catalog, e, shopping.stock),
     );
 
     if (entries.length === 0) {
@@ -916,7 +1107,7 @@ export class WhatsappService {
   }
 
   async askCleaning(phone: string, variantId: string) {
-    const entry = await this.findCatalogEntry(variantId);
+    const entry = await this.findCatalogEntry(phone, variantId);
     if (!entry) {
       await this.sendText(phone, this.messages.get('prep.unavailable'));
       return this.sendCategoryList(phone);
@@ -941,7 +1132,7 @@ export class WhatsappService {
   }
 
   async askCutting(phone: string, variantId: string, clean: string) {
-    const entry = await this.findCatalogEntry(variantId);
+    const entry = await this.findCatalogEntry(phone, variantId);
     if (!entry) {
       await this.sendText(phone, this.messages.get('prep.unavailable'));
       return this.sendCategoryList(phone);
@@ -962,7 +1153,7 @@ export class WhatsappService {
   }
 
   async askCuttingOption(phone: string, variantId: string, clean: string) {
-    const entry = await this.findCatalogEntry(variantId);
+    const entry = await this.findCatalogEntry(phone, variantId);
     if (!entry) {
       await this.sendText(phone, this.messages.get('prep.unavailable'));
       return this.sendCategoryList(phone);
@@ -1020,7 +1211,7 @@ export class WhatsappService {
     cut: string,
     cuttingOption: string,
   ) {
-    const entry = await this.findCatalogEntry(variantId);
+    const entry = await this.findCatalogEntry(phone, variantId);
     if (!entry) {
       await this.sendText(phone, this.messages.get('prep.unavailable'));
       return this.sendCategoryList(phone);
@@ -1108,7 +1299,7 @@ export class WhatsappService {
     cut: string,
     cuttingOption: string,
   ) {
-    const entry = await this.findCatalogEntry(variantId);
+    const entry = await this.findCatalogEntry(phone, variantId);
     if (!entry) {
       await this.sendText(phone, this.messages.get('prep.unavailable'));
       return this.sendCategoryList(phone);
@@ -1316,6 +1507,37 @@ export class WhatsappService {
       return this.sendCategoryList(phone);
     }
 
+    const catalog = await this.getOpenCatalog();
+    if (!catalog) return this.sendUnavailableMessage(phone);
+
+    const shopping = await this.resolveShoppingOutlet(phone, true);
+    if (shopping === 'prompted') return;
+
+    // Final gate before the order (and its stock deduction) exists: drop the
+    // products the catalog or the chosen outlet can no longer cover, name
+    // them, and let the customer review the cart again.
+    const blocked = uncoverableProductIds(items, catalog, shopping.stock);
+    if (blocked.size > 0) {
+      const names = new Map<string, string>();
+      for (const item of items) {
+        if (!blocked.has(item.productId)) continue;
+        names.set(
+          item.productId,
+          (item.product?.name &&
+            localize(item.product.name, this.messages.currentLanguage())) ||
+            this.messages.get('common.fallbackProduct'),
+        );
+        await this.cartService.removeItem(phone, item.id);
+      }
+      await this.sendText(
+        phone,
+        this.messages.get('cart.itemsOutOfStock', {
+          items: [...names.values()].map((n) => `• ${n}`).join('\n'),
+        }),
+      );
+      return this.sendCartSummary(phone);
+    }
+
     // Map cart lines into the products[] shape orderService.createOrder consumes.
     const products = items.map((item: any) => ({
       product_retailer_id: item.variantId,
@@ -1329,7 +1551,7 @@ export class WhatsappService {
     }));
 
     // createOrder builds the DRAFT order and sends the address confirmation/flow.
-    await this.createOrder(phone, products);
+    await this.createOrder(phone, products, shopping.outlet?.id ?? null);
     await this.cartService.clearCart(cart.id);
   }
 
@@ -1520,9 +1742,17 @@ export class WhatsappService {
     }
   }
 
-  async createOrder(phone: string, products: any[]) {
+  async createOrder(
+    phone: string,
+    products: any[],
+    outletId: string | null = null,
+  ) {
     try {
-      const order = await this.orderService.createOrder(phone, products);
+      const order = await this.orderService.createOrder(
+        phone,
+        products,
+        outletId,
+      );
       if (!order) return 'Order creation failed';
 
       const user = await this.userRepository.findOne({ where: { phone } });
@@ -1734,7 +1964,7 @@ export class WhatsappService {
     wardId: string,
     orderId?: string,
   ) {
-    const areas = await this.areaService.findActiveByWard(wardId);
+    const areas = await this.areasForCheckout(wardId, orderId);
     if (areas.length === 0) {
       return this.sendAddressFlowForm(phone, wardId, orderId);
     }
@@ -1742,15 +1972,53 @@ export class WhatsappService {
   }
 
   /**
-   * Sends an interactive list of active areas for a ward. The picked area is
-   * carried into the address Flow form via the reply id
-   * (`pickArea~<areaId>~<wardId>[~<orderId>]`), mirroring `sendWardList`.
+   * Active areas of a ward a customer may pick. At checkout (`orderId`) an
+   * order that already has its outlet (chosen before browsing) only offers that
+   * outlet's areas, so the delivering agent always belongs to the outlet whose
+   * stock was used.
    */
-  async sendAreaList(phone: string, wardId: string, page = 0, orderId?: string) {
+  private async areasForCheckout(wardId: string, orderId?: string) {
     const areas = await this.areaService.findActiveByWard(wardId);
+    if (!orderId) return areas;
+    const outlet = await this.orderService.getOrderOutlet(orderId);
+    return outlet ? areas.filter((a) => a.outletId === outlet.id) : areas;
+  }
+
+  /**
+   * "Add New Address" at checkout. An order whose outlet is already known can
+   * only be delivered within that outlet's ward, so skip the ward list and go
+   * straight to its areas; otherwise the usual ward → area → form path.
+   */
+  private async handleAddNewAddress(phone: string, orderId: string) {
+    const outlet = await this.orderService.getOrderOutlet(orderId);
+    if (outlet?.wardId) {
+      return this.sendAreaListOrForm(phone, outlet.wardId, orderId);
+    }
+    return this.sendWardList(phone, 0, orderId);
+  }
+
+  /**
+   * Sends an interactive list of active areas for a ward. In 'new' mode the
+   * picked area is carried into the address Flow form via the reply id
+   * (`pickArea~<areaId>~<wardId>[~<orderId>]`), mirroring `sendWardList`. In
+   * 'repick' mode (checkout only) it replaces a removed area on the saved
+   * address instead (`fixArea~<areaId>~<orderId>`) — no address re-entry.
+   */
+  async sendAreaList(
+    phone: string,
+    wardId: string,
+    page = 0,
+    orderId?: string,
+    mode: 'new' | 'repick' = 'new',
+  ) {
+    const areas = await this.areasForCheckout(wardId, orderId);
 
     if (areas.length === 0) {
-      return this.sendAddressFlowForm(phone, wardId, orderId);
+      // Re-pick with nothing left to pick: the confirm flow's area check
+      // passes on an empty list and carries on to payment.
+      return mode === 'repick' && orderId
+        ? this.handleConfirmAddress(phone, orderId)
+        : this.sendAddressFlowForm(phone, wardId, orderId);
     }
 
     const LIST_MAX = 10;
@@ -1764,19 +2032,24 @@ export class WhatsappService {
       const start = page * PAGE_SIZE;
       pageAreas = areas.slice(start, start + PAGE_SIZE);
       if (pageAreas.length === 0) {
-        return this.sendAreaList(phone, wardId, 0, orderId); // out-of-range page, restart
+        return this.sendAreaList(phone, wardId, 0, orderId, mode); // out-of-range page, restart
       }
       moreRow = start + PAGE_SIZE < areas.length;
     }
 
     const suffix = orderId ? `~${orderId}` : '';
+    const repick = mode === 'repick';
     const rows: any[] = pageAreas.map((a) => ({
-      id: `pickArea~${a.id}~${wardId}${suffix}`,
+      id: repick
+        ? `fixArea~${a.id}~${orderId}`
+        : `pickArea~${a.id}~${wardId}${suffix}`,
       title: this.truncate(localize(a.name, this.messages.currentLanguage()), 24),
     }));
     if (moreRow) {
       rows.push({
-        id: `areaPage~${page + 1}~${wardId}${suffix}`,
+        id: repick
+          ? `fixAreaPage~${page + 1}~${wardId}~${orderId}`
+          : `areaPage~${page + 1}~${wardId}${suffix}`,
         title: this.messages.get('address.areaListMore'),
       });
     }
@@ -1792,7 +2065,11 @@ export class WhatsappService {
           type: 'text',
           text: this.messages.get('address.areaListHeader'),
         },
-        body: { text: this.messages.get('address.areaListBody') },
+        body: {
+          text: this.messages.get(
+            repick ? 'address.areaRepickBody' : 'address.areaListBody',
+          ),
+        },
         footer: { text: this.messages.get('common.footer') },
         action: {
           button: this.messages.get('address.areaListButton'),
@@ -1868,6 +2145,66 @@ export class WhatsappService {
         return this.sendAddressFlowForm(phone, null, orderId);
       }
 
+      // The order's outlet was chosen from this customer's ward before they
+      // browsed. A saved address in another ward can't be served by it — take
+      // a new address within the outlet's ward.
+      const outlet = await this.orderService.getOrderOutlet(orderId);
+      if (outlet?.wardId && address.wardId !== outlet.wardId) {
+        return this.sendAreaListOrForm(phone, outlet.wardId, orderId);
+      }
+
+      // Saved addresses keep the area they were entered with, but an admin
+      // can remove or replace an agent's areas later. A removed area assigns
+      // no agent, so ask for the area again whenever the ward (for this
+      // outlet) has areas and the saved one isn't among them.
+      if (address.wardId) {
+        const areas = await this.areasForCheckout(address.wardId, orderId);
+        if (areas.length > 0 && !areas.some((a) => a.id === address.areaId)) {
+          return this.sendAreaList(phone, address.wardId, 0, orderId, 'repick');
+        }
+      }
+
+      return this.confirmSavedAddress(phone, orderId, address);
+    } catch (error) {
+      console.error('Error confirming address:', error);
+    }
+  }
+
+  /**
+   * Area re-pick (`fixArea~<areaId>~<orderId>`): stores the new area on the
+   * saved address, then resumes the confirm flow, which now passes the area
+   * check and moves on to payment.
+   */
+  private async handleRepickArea(
+    phone: string,
+    areaId: string,
+    orderId: string,
+  ) {
+    const user = await this.userRepository.findOne({ where: { phone } });
+    if (!user) return;
+    const address = await this.userAddressRepository.findOne({
+      where: { userId: user.id },
+      order: { createdAt: 'DESC' },
+    });
+    if (!address?.wardId) return this.handleConfirmAddress(phone, orderId);
+
+    const areas = await this.areasForCheckout(address.wardId, orderId);
+    if (!areas.some((a) => a.id === areaId)) {
+      // Stale row (area removed since the list was sent) — offer it again.
+      return this.sendAreaList(phone, address.wardId, 0, orderId, 'repick');
+    }
+
+    await this.userAddressRepository.update(address.id, { areaId });
+    return this.handleConfirmAddress(phone, orderId);
+  }
+
+  /** Writes the saved address onto the order and moves on to payment. */
+  private async confirmSavedAddress(
+    phone: string,
+    orderId: string,
+    address: UserAddress,
+  ) {
+    try {
       const order = await this.orderService.confirmOrderWithAddress(orderId, {
         name: address.name,
         address: address.address,

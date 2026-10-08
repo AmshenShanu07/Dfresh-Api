@@ -17,6 +17,12 @@ export class Cart {
   @Column({ type: 'varchar' })
   userId: string;
 
+  // The outlet the customer chose to shop from when their ward has more than
+  // one selling outlet. Kept across sessions (the cart outlives an order) and
+  // re-validated against the customer's current ward on every use.
+  @Column({ type: 'varchar', nullable: true, default: null })
+  outletId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

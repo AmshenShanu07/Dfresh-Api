@@ -45,6 +45,7 @@ function buildService(products: any[], catalogEntries: any[]) {
     {} as any, // wardRepository
     {} as any, // areaService
     {} as any, // orderService
+    {} as any, // outletStockService
   );
   return { service, productRepo };
 }

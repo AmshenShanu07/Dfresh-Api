@@ -28,6 +28,7 @@ export class OutletService {
         phone: createOutletDto.phone,
         location: createOutletDto.location,
         commission: createOutletDto.commission,
+        isSalesEnabled: createOutletDto.isSalesEnabled,
         wardId: createOutletDto.wardId ?? null,
       }),
     );
