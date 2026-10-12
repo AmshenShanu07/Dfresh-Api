@@ -121,8 +121,30 @@ export class CartService {
     await this.cartRepository.update(cart.id, { outletId });
   }
 
-  /** Deletes all items in a cart (called after the cart is converted to an order). */
+  /** The UserAddress confirmed for this cart before browsing, or null. */
+  async getConfirmedAddressId(phone: string): Promise<string | null> {
+    const user = await this.getCustomerByPhone(phone);
+    if (!user) return null;
+    const cart = await this.cartRepository.findOne({
+      where: { userId: user.id },
+    });
+    return cart?.addressId ?? null;
+  }
+
+  /** Records the delivery address the customer confirmed before browsing. */
+  async setConfirmedAddress(phone: string, addressId: string): Promise<void> {
+    const user = await this.getCustomerByPhone(phone);
+    if (!user) return;
+    const cart = await this.getOrCreateCart(user.id);
+    await this.cartRepository.update(cart.id, { addressId });
+  }
+
+  /**
+   * Deletes all items in a cart (called after the cart is converted to an
+   * order) and forgets the confirmed address, so the next shopping asks again.
+   */
   async clearCart(cartId: string): Promise<void> {
     await this.cartItemRepository.delete({ cartId });
+    await this.cartRepository.update(cartId, { addressId: null });
   }
 }

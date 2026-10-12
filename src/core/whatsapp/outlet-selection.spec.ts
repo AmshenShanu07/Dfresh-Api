@@ -107,7 +107,8 @@ describe('resolveShoppingOutlet', () => {
 
     expect(result).toBe('prompted');
     expect(sent.text).toHaveBeenCalledWith('91999', 'outlet.addressFirst');
-    expect(sent.wardList).toHaveBeenCalledWith('91999');
+    // Back to the products once the address is saved.
+    expect(sent.wardList).toHaveBeenCalledWith('91999', 0, 'shop');
   });
 
   // Orders used to fall back to catalog-only stock here and were created with

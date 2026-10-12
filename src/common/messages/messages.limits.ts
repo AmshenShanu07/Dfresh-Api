@@ -50,6 +50,11 @@ export const MESSAGE_LIMITS: Record<string, FieldKind> = {
   'onboarding.buttonViewProducts': 'buttonTitle',
   'onboarding.buttonViewCart': 'buttonTitle',
   'onboarding.buttonLanguage': 'buttonTitle',
+  'onboarding.buttonSettings': 'buttonTitle',
+
+  'settings.body': 'body',
+  'settings.buttonAddress': 'buttonTitle',
+  'settings.addressUpdated': 'body',
 
   'category.listHeader': 'header',
   'category.listBody': 'body',
@@ -108,6 +113,7 @@ export const MESSAGE_LIMITS: Record<string, FieldKind> = {
   'cart.removeRowPrice': 'rowDescription',
   'cart.itemRemoved': 'body',
   'cart.itemsOutOfStock': 'body',
+  'cart.itemsRemovedForAddress': 'body',
 
   'outlet.listHeader': 'header',
   'outlet.listBody': 'body',
@@ -135,6 +141,9 @@ export const MESSAGE_LIMITS: Record<string, FieldKind> = {
   'address.confirm': 'body',
   'address.buttonConfirm': 'buttonTitle',
   'address.buttonAddNew': 'buttonTitle',
+  'address.shopConfirm': 'body',
+  'address.buttonDeliverHere': 'buttonTitle',
+  'address.buttonChange': 'buttonTitle',
 
   'payment.prompt': 'body',
   'payment.buttonCod': 'buttonTitle',

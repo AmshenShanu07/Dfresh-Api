@@ -22,7 +22,8 @@
     "mainMenu": "Hi {{name}}! What would you like to purchase?",
     "buttonViewProducts": "View Products",
     "buttonViewCart": "View Cart",
-    "buttonLanguage": "Change Language"
+    "buttonLanguage": "Change Language",
+    "buttonSettings": "Settings"
   },
   "category": {
     "listHeader": "Shop by Category",
@@ -118,7 +119,8 @@
     "removeListSection": "Cart Items",
     "removeRowPrice": "₹{{lineTotal}}",
     "itemRemoved": "Item removed from the cart",
-    "itemsOutOfStock": "Sorry, these items are no longer available in the quantity in your cart and were removed:\n{{items}}\n\nPlease review your cart."
+    "itemsOutOfStock": "Sorry, these items are no longer available in the quantity in your cart and were removed:\n{{items}}\n\nPlease review your cart.",
+    "itemsRemovedForAddress": "These items are not available from the outlet that delivers to your address, so we removed them from your cart:\n{{items}}"
   },
   "address": {
     "wardListHeader": "Select Your Ward",
@@ -139,7 +141,10 @@
     "confirm": "Please verify your delivery address:\n\nName: {{name}}\nAddress: {{address}}\nLandmark: {{landmark}}\nPincode: {{pincode}}\nPhone: {{phone}}\n\nIs this correct?",
     "buttonConfirm": "Confirm Address",
     "buttonAddNew": "Add New Address",
-    "areaRepickBody": "The area saved with your address is no longer served. Please choose your area again to continue."
+    "areaRepickBody": "The area saved with your address is no longer served. Please choose your area again to continue.",
+    "shopConfirm": "We will deliver your order to:\n\nName: {{name}}\nAddress: {{address}}\nLandmark: {{landmark}}\nPhone: {{phone}}\n\nThe products and prices we show depend on this address. Deliver here, or change the address?",
+    "buttonDeliverHere": "Deliver Here",
+    "buttonChange": "Change Address"
   },
   "payment": {
     "prompt": "Your order is ready!\n\n*Total Amount: ₹{{amount}}*\n\nChoose payment method:",
@@ -180,5 +185,10 @@
     "outOfStock": "All products are currently out of stock. Please try after some time",
     "offHoursWithNext": "We're not in active hours right now.\nOur next active window opens on {{nextWindow}} IST.\nPlease message us then",
     "offHours": "We're not in active hours right now. Please check back later"
+  },
+  "settings": {
+    "body": "Settings — what would you like to change?",
+    "buttonAddress": "Change Address",
+    "addressUpdated": "Your delivery address is updated."
   }
 }

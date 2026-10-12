@@ -139,6 +139,16 @@ some room.
 | `mainMenu` | Reply to any other text from a known customer | `{{name}}` |
 | `buttonViewProducts` | Button that opens the catalog | — |
 | `buttonViewCart` | Button that opens the cart (only shown when the cart has items) | — |
+| `buttonSettings` | Third main-menu button; opens the Settings menu | — |
+| `buttonLanguage` | "Change Language" button inside the Settings menu | — |
+
+### `settings` — the Settings menu
+
+| Key | Where it shows | Placeholders |
+|---|---|---|
+| `body` | Text of the Settings menu | — |
+| `buttonAddress` | Button that starts entering a new delivery address | — |
+| `addressUpdated` | Sent after a new address is saved from Settings | — |
 
 ### `category` — the first browsing screen
 
@@ -235,6 +245,7 @@ Each measurement family has its own wording so the sentence reads naturally in a
 | `removeRowPrice` | Price under each removable row | `{{lineTotal}}` |
 | `itemRemoved` | Confirmation after removing | — |
 | `itemsOutOfStock` | Sent at checkout when some cart items can no longer be covered by the catalog or the chosen outlet's stock | `{{items}}` — one `• Product` line per removed product |
+| `itemsRemovedForAddress` | Sent after the delivery address or outlet changes, when the new outlet can't supply some cart items | `{{items}}` — one `• Product` line per removed product |
 
 ### `outlet` — choosing an outlet when a ward has more than one
 
@@ -258,7 +269,9 @@ Each measurement family has its own wording so the sentence reads naturally in a
 | `flowPrompt` | Text above the address form | — |
 | `flowButton` | Button that opens the form | — |
 | `confirm` | Asking a returning customer to confirm their saved address | `{{name}}`, `{{address}}`, `{{pinCode}}`, `{{phone}}` |
-| `buttonConfirm` / `buttonAddNew` | The two buttons under it | — |
+| `buttonConfirm` / `buttonAddNew` | The two buttons under it (only on orders started before the address-first flow) | — |
+| `shopConfirm` | Asked before products are shown (View Products, the catalog broadcast, or checkout of a cart with no confirmed address) | `{{name}}`, `{{address}}`, `{{landmark}}`, `{{phone}}` |
+| `buttonDeliverHere` / `buttonChange` | The two buttons under it | — |
 
 ### `payment`
 

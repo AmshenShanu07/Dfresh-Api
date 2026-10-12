@@ -48,6 +48,16 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     buttonViewProducts: 'View Products',
     buttonViewCart: 'View Cart',
     buttonLanguage: 'Change Language',
+    // Third main-menu button; opens Change Language / Change Address.
+    buttonSettings: 'Settings',
+  },
+
+  // The Settings menu from the main menu.
+  settings: {
+    body: 'Settings — what would you like to change?',
+    buttonAddress: 'Change Address',
+    // Sent after a new address is saved from Settings.
+    addressUpdated: 'Your delivery address is updated.',
   },
 
   category: {
@@ -156,6 +166,10 @@ export const MESSAGE_DEFAULTS: MessageTree = {
     // stock; {{items}} is one "• Product" line per removed product.
     itemsOutOfStock:
       'Sorry, these items are no longer available in the quantity in your cart and were removed:\n{{items}}\n\nPlease review your cart.',
+    // Sent after the delivery address or outlet changes and the new outlet
+    // can't supply some cart items; {{items}} as for itemsOutOfStock.
+    itemsRemovedForAddress:
+      'These items are not available from the outlet that delivers to your address, so we removed them from your cart:\n{{items}}',
   },
 
   // Shown when the customer's ward has more than one selling outlet.
@@ -206,6 +220,17 @@ export const MESSAGE_DEFAULTS: MessageTree = {
       'Is this correct?',
     buttonConfirm: 'Confirm Address',
     buttonAddNew: 'Add New Address',
+    // Asked before products are shown ("View Products" or the broadcast): the
+    // address decides the outlet and stock the products come from.
+    shopConfirm:
+      'We will deliver your order to:\n\n' +
+      'Name: {{name}}\n' +
+      'Address: {{address}}\n' +
+      'Landmark: {{landmark}}\n' +
+      'Phone: {{phone}}\n\n' +
+      'The products and prices we show depend on this address. Deliver here, or change the address?',
+    buttonDeliverHere: 'Deliver Here',
+    buttonChange: 'Change Address',
   },
 
   payment: {

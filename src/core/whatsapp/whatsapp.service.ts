@@ -53,6 +53,14 @@ type ShoppingOutlet = {
   outlets: Outlets[];
 };
 
+/**
+ * Where a customer goes once a new address entered outside an order is saved:
+ * back to the products (`shop`), back to their cart (`cart`), or the main menu
+ * (`settings`).
+ */
+const ADDRESS_NEXT_STEPS = ['shop', 'cart', 'settings'] as const;
+type AddressNext = (typeof ADDRESS_NEXT_STEPS)[number];
+
 @Injectable()
 export class WhatsappService {
   private readonly botToken: string;
@@ -372,11 +380,12 @@ export class WhatsappService {
       });
     }
     // Third and last — WhatsApp rejects a button message with more than three.
+    // Settings holds both Change Language and Change Address.
     buttons.push({
       type: 'reply',
       reply: {
-        id: 'changeLang',
-        title: this.messages.get('onboarding.buttonLanguage'),
+        id: 'settings',
+        title: this.messages.get('onboarding.buttonSettings'),
       },
     });
     return buttons;
@@ -473,7 +482,7 @@ export class WhatsappService {
 
         await this.sendText(phone, this.messages.get('catalog.broadcast'));
 
-        return this.sendCategoryList(phone);
+        return this.sendShoppingAddressPrompt(phone, 'shop');
       });
     } catch (error: any) {
       console.error('Error sending message:', error.response?.data || error.message);
@@ -494,6 +503,21 @@ export class WhatsappService {
       // the name gate, for every customer, so it never reaches this switch.
       case 'changeLang':
         return this.sendLanguagePrompt(phone);
+      case 'settings':
+        return this.sendSettingsMenu(phone);
+      case 'settingsAddr':
+        return this.sendWardList(phone, 0, 'settings');
+      case 'addrOk':
+        // parts: ['shop' | 'cart']
+        return this.handleShoppingAddressConfirmed(phone, parts[0]);
+      case 'addrNew':
+        // parts: ['shop' | 'cart'] — a new address may be in any ward, so the
+        // full ward list, never one locked to an outlet.
+        return this.sendWardList(
+          phone,
+          0,
+          parts[0] === 'cart' ? 'cart' : 'shop',
+        );
       case 'pickCat':
         return this.sendProductList(phone, parts[0]);
       case 'catPage':
@@ -535,16 +559,17 @@ export class WhatsappService {
       case 'cartBuyNow':
         return this.checkoutCart(phone);
       case 'pickWard':
-        // parts: [wardId, orderId?]
+        // parts: [wardId, ctx?] — ctx is an order id or a next step, see
+        // parseAddressContext.
         return this.sendAreaListOrForm(phone, parts[0], parts[1]);
       case 'wardPage':
-        // parts: [page, orderId?]
+        // parts: [page, ctx?]
         return this.sendWardList(phone, parseInt(parts[0], 10) || 0, parts[1]);
       case 'pickArea':
-        // parts: [areaId, wardId, orderId?]
+        // parts: [areaId, wardId, ctx?]
         return this.sendAddressFlowForm(phone, parts[1], parts[2], parts[0]);
       case 'areaPage':
-        // parts: [page, wardId, orderId?]
+        // parts: [page, wardId, ctx?]
         return this.sendAreaList(
           phone,
           parts[1],
@@ -572,7 +597,9 @@ export class WhatsappService {
 
     // Legacy hyphen-prefixed actions (catalog entry / address / payment)
     if (replyId === 'get-catlog') {
-      return this.sendCategoryList(phone);
+      // "View Products" starts a shopping: settle the delivery address first,
+      // since it decides the ward, outlet and stock the products come from.
+      return this.sendShoppingAddressPrompt(phone, 'shop');
     } else if (replyId.startsWith('confirmAddress-')) {
       return this.handleConfirmAddress(phone, replyId.replace('confirmAddress-', ''));
     } else if (replyId.startsWith('addAddress-')) {
@@ -735,7 +762,7 @@ export class WhatsappService {
     if (!address?.wardId) {
       if (!prompt) return none;
       await this.sendText(phone, this.messages.get('outlet.addressFirst'));
-      await this.sendWardList(phone);
+      await this.sendWardList(phone, 0, 'shop');
       return 'prompted';
     }
 
@@ -821,6 +848,9 @@ export class WhatsappService {
       phone,
       this.messages.get('outlet.selected', { outlet: picked.name }),
     );
+    // Items already in the cart came from the previous outlet's stock.
+    const pruned = await this.pruneCartForCurrentOutlet(phone);
+    if (pruned === 'prompted') return;
     return this.sendCategoryList(phone);
   }
 
@@ -1503,7 +1533,65 @@ export class WhatsappService {
     return this.sendCartSummary(phone);
   }
 
-  /** Converts the cart into a DRAFT order and enters the address → payment flow. */
+  /**
+   * Removes the cart lines whose product is in `blocked` and returns the
+   * removed products' names as a bulleted list, one line per product.
+   */
+  private async removeCartProducts(
+    phone: string,
+    items: any[],
+    blocked: Set<string>,
+  ): Promise<string> {
+    const names = new Map<string, string>();
+    for (const item of items) {
+      if (!blocked.has(item.productId)) continue;
+      names.set(
+        item.productId,
+        (item.product?.name &&
+          localize(item.product.name, this.messages.currentLanguage())) ||
+          this.messages.get('common.fallbackProduct'),
+      );
+      await this.cartService.removeItem(phone, item.id);
+    }
+    return [...names.values()].map((n) => `• ${n}`).join('\n');
+  }
+
+  /**
+   * Re-checks the cart after the delivery address or outlet changed: the items
+   * were picked from the previous outlet's stock. Products the current outlet
+   * (or the open catalog) can't cover are removed and named; the rest stay.
+   * Returns 'prompted' when the customer still has to pick an outlet — the
+   * outlet pick runs this again. A closed catalog skips the check; checkout
+   * re-checks anyway.
+   */
+  private async pruneCartForCurrentOutlet(
+    phone: string,
+  ): Promise<'prompted' | void> {
+    const cart = await this.cartService.getCart(phone);
+    const items = cart?.cartItems ?? [];
+    if (items.length === 0) return;
+
+    const catalog = await this.getOpenCatalog();
+    if (!catalog) return;
+
+    const shopping = await this.resolveShoppingOutlet(phone, true);
+    if (shopping === 'prompted') return 'prompted';
+
+    const blocked = uncoverableProductIds(items, catalog, shopping.stock);
+    if (blocked.size === 0) return;
+
+    const removed = await this.removeCartProducts(phone, items, blocked);
+    await this.sendText(
+      phone,
+      this.messages.get('cart.itemsRemovedForAddress', { items: removed }),
+    );
+  }
+
+  /**
+   * Converts the cart into a DRAFT order and goes straight to payment. The
+   * delivery address was settled before browsing (`sendShoppingAddressPrompt`),
+   * so the order is placed for that address without asking again.
+   */
   async checkoutCart(phone: string) {
     const cart = await this.cartService.getCart(phone);
     const items = cart?.cartItems ?? [];
@@ -1516,30 +1604,27 @@ export class WhatsappService {
     const catalog = await this.getOpenCatalog();
     if (!catalog) return this.sendUnavailableMessage(phone);
 
+    // A cart filled before this flow existed, or one reopened via "View Cart"
+    // after the customer added another address, has no confirmed address
+    // for its current one — settle it before placing the order.
+    const address = await this.latestAddress(phone);
+    if (!address || cart.addressId !== address.id) {
+      return this.sendShoppingAddressPrompt(phone, 'cart');
+    }
+
     const shopping = await this.resolveShoppingOutlet(phone, true);
     if (shopping === 'prompted') return;
+    if (!shopping.outlet) return;
 
     // Final gate before the order (and its stock deduction) exists: drop the
     // products the catalog or the chosen outlet can no longer cover, name
     // them, and let the customer review the cart again.
     const blocked = uncoverableProductIds(items, catalog, shopping.stock);
     if (blocked.size > 0) {
-      const names = new Map<string, string>();
-      for (const item of items) {
-        if (!blocked.has(item.productId)) continue;
-        names.set(
-          item.productId,
-          (item.product?.name &&
-            localize(item.product.name, this.messages.currentLanguage())) ||
-            this.messages.get('common.fallbackProduct'),
-        );
-        await this.cartService.removeItem(phone, item.id);
-      }
+      const removed = await this.removeCartProducts(phone, items, blocked);
       await this.sendText(
         phone,
-        this.messages.get('cart.itemsOutOfStock', {
-          items: [...names.values()].map((n) => `• ${n}`).join('\n'),
-        }),
+        this.messages.get('cart.itemsOutOfStock', { items: removed }),
       );
       return this.sendCartSummary(phone);
     }
@@ -1556,9 +1641,20 @@ export class WhatsappService {
       cuttingCharge: item.cuttingCharge ?? 0,
     }));
 
-    // createOrder builds the DRAFT order and sends the address confirmation/flow.
-    await this.createOrder(phone, products, shopping.outlet?.id ?? null);
-    await this.cartService.clearCart(cart.id);
+    try {
+      const order = await this.orderService.createOrder(
+        phone,
+        products,
+        shopping.outlet.id,
+      );
+      if (!order) return;
+      await this.cartService.clearCart(cart.id);
+      // Writes the confirmed address onto the order and sends the payment
+      // buttons — after re-checking its area is still served.
+      await this.handleConfirmAddress(phone, order.id);
+    } catch (error) {
+      console.error('Error creating order:', error);
+    }
   }
 
   /** Returns the price of a cutting style (by master id) on a variant, or 0. */
@@ -1789,6 +1885,145 @@ export class WhatsappService {
     }
   }
 
+  /** The customer's current delivery address (their latest saved one), or null. */
+  private async latestAddress(phone: string): Promise<UserAddress | null> {
+    const user = await this.userRepository.findOne({ where: { phone } });
+    if (!user) return null;
+    return this.userAddressRepository.findOne({
+      where: { userId: user.id },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Start of a shopping ("View Products", the catalog broadcast) or a checkout
+   * whose cart has no confirmed address: asks whether to deliver to the saved
+   * address or to a new one, before any product is shown. The address decides
+   * the ward, outlet and stock, so it can't change once products are picked.
+   * `next` is where the customer goes once the address is settled.
+   */
+  async sendShoppingAddressPrompt(phone: string, next: 'shop' | 'cart') {
+    const address = await this.latestAddress(phone);
+    if (!address) {
+      await this.sendText(phone, this.messages.get('outlet.addressFirst'));
+      return this.sendWardList(phone, 0, next);
+    }
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: {
+          text: this.messages.get('address.shopConfirm', {
+            name: address.name,
+            address: address.address,
+            landmark: address.landmark ?? '',
+            phone: address.phone,
+          }),
+        },
+        footer: { text: this.messages.get('common.footer') },
+        action: {
+          buttons: [
+            {
+              type: 'reply',
+              reply: {
+                id: `addrOk~${next}`,
+                title: this.messages.get('address.buttonDeliverHere'),
+              },
+            },
+            {
+              type: 'reply',
+              reply: {
+                id: `addrNew~${next}`,
+                title: this.messages.get('address.buttonChange'),
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Shopping address prompt sent:', response.data);
+  }
+
+  /** "Deliver Here" (`addrOk~<next>`): lock the cart to the current address. */
+  private async handleShoppingAddressConfirmed(phone: string, next: string) {
+    const address = await this.latestAddress(phone);
+    // Stale button from before the customer's addresses were removed.
+    if (!address) return this.sendShoppingAddressPrompt(phone, 'shop');
+
+    await this.cartService.setConfirmedAddress(phone, address.id);
+    if (next === 'cart') return this.checkoutCart(phone);
+    return this.afterNewShoppingAddress(phone);
+  }
+
+  /**
+   * Shows the products for the address just settled, after dropping any cart
+   * items its outlet can't supply.
+   */
+  private async afterNewShoppingAddress(phone: string) {
+    const pruned = await this.pruneCartForCurrentOutlet(phone);
+    if (pruned === 'prompted') return;
+    return this.sendCategoryList(phone);
+  }
+
+  /** Settings from the main menu: language or delivery address. */
+  private async sendSettingsMenu(phone: string) {
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: this.messages.get('settings.body') },
+        footer: { text: this.messages.get('common.footer') },
+        action: {
+          buttons: [
+            {
+              type: 'reply',
+              reply: {
+                id: 'changeLang',
+                title: this.messages.get('onboarding.buttonLanguage'),
+              },
+            },
+            {
+              type: 'reply',
+              reply: {
+                id: 'settingsAddr',
+                title: this.messages.get('settings.buttonAddress'),
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const response = await this.waInstance.post('/messages', payload);
+    console.log('Settings menu sent:', response.data);
+  }
+
+  /**
+   * The optional trailing context carried through the ward → area → address
+   * form steps. Checkout buttons sent before the address-first flow carry an
+   * order id; everything else names the step to go to once the new address is
+   * saved. Onboarding carries nothing.
+   */
+  private parseAddressContext(ctx?: string | null): {
+    orderId: string | null;
+    next: AddressNext | null;
+  } {
+    if (!ctx) return { orderId: null, next: null };
+    if ((ADDRESS_NEXT_STEPS as readonly string[]).includes(ctx)) {
+      return { orderId: null, next: ctx as AddressNext };
+    }
+    return { orderId: ctx, next: null };
+  }
+
   /**
    * Prompts the customer to pick a ward if they don't have a saved address yet.
    * Used right after the welcome message to onboard the delivery address.
@@ -1805,16 +2040,17 @@ export class WhatsappService {
 
   /**
    * Sends an interactive list of active wards. The picked ward is carried into
-   * the address Flow form via the reply id (`pickWard~<wardId>[~<orderId>]`).
-   * `orderId` is present only in the checkout path; onboarding omits it.
+   * the address Flow form via the reply id (`pickWard~<wardId>[~<ctx>]`).
+   * `ctx` (see `parseAddressContext`) is an order id on old checkout buttons
+   * or the step to return to after the address; onboarding omits it.
    */
-  async sendWardList(phone: string, page = 0, orderId?: string) {
+  async sendWardList(phone: string, page = 0, ctx?: string) {
     const allWards = await this.wardService.findAllActive();
 
     // No wards configured yet — fall straight through to the address form so the
     // customer is never blocked.
     if (allWards.length === 0) {
-      return this.sendAddressFlowForm(phone, null, orderId);
+      return this.sendAddressFlowForm(phone, null, ctx);
     }
 
     // Only wards an outlet sells into: picking any other ward would only end
@@ -1836,12 +2072,12 @@ export class WhatsappService {
       const start = page * PAGE_SIZE;
       pageWards = wards.slice(start, start + PAGE_SIZE);
       if (pageWards.length === 0) {
-        return this.sendWardList(phone, 0, orderId); // out-of-range page, restart
+        return this.sendWardList(phone, 0, ctx); // out-of-range page, restart
       }
       moreRow = start + PAGE_SIZE < wards.length;
     }
 
-    const suffix = orderId ? `~${orderId}` : '';
+    const suffix = ctx ? `~${ctx}` : '';
     const lang = this.messages.currentLanguage();
     const rows: any[] = pageWards.map((w) => {
       const wardName = localize(w.wardName, lang);
@@ -1902,20 +2138,23 @@ export class WhatsappService {
 
   /**
    * Builds the address Flow `flow_token`, carrying the picked ward, the
-   * picked area (when the ward had any), and the order id at checkout, so
-   * all three can be recovered in `receiveAddress`. Segments are order-id
-   * (checkout only) · `WARD:<wardId>` · `AREA:<areaId>` (only when an area
-   * was picked), joined with `|`. Onboarding, no area: `WARD:<wardId>`.
+   * picked area (when the ward had any), and the address context, so all of
+   * them can be recovered in `receiveAddress`. Segments are order-id (old
+   * checkout buttons only) · `WARD:<wardId>` · `AREA:<areaId>` (only when an
+   * area was picked) · `NEXT:<step>` (address entered from shopping, the cart
+   * or Settings), joined with `|`. Onboarding, no area: `WARD:<wardId>`.
    */
   private buildAddressFlowToken(
     wardId: string | null,
-    orderId?: string,
+    ctx?: string,
     areaId?: string | null,
   ): string {
+    const { orderId, next } = this.parseAddressContext(ctx);
     const parts: string[] = [];
     if (orderId) parts.push(orderId);
     parts.push(`WARD:${wardId ?? ''}`);
     if (areaId) parts.push(`AREA:${areaId}`);
+    if (next) parts.push(`NEXT:${next}`);
     return parts.join('|');
   }
 
@@ -1923,35 +2162,45 @@ export class WhatsappService {
     wardId: string | null;
     orderId: string | null;
     areaId: string | null;
+    next: AddressNext | null;
   } {
-    if (!token) return { wardId: null, orderId: null, areaId: null };
+    if (!token)
+      return { wardId: null, orderId: null, areaId: null, next: null };
 
     const segments = token.split('|');
 
     // Legacy token = plain orderId (no ward/area segments at all).
     if (segments.length === 1 && !segments[0].startsWith('WARD:')) {
-      return { wardId: null, orderId: segments[0] || null, areaId: null };
+      return {
+        wardId: null,
+        orderId: segments[0] || null,
+        areaId: null,
+        next: null,
+      };
     }
 
     let orderId: string | null = null;
     let wardId: string | null = null;
     let areaId: string | null = null;
+    let next: AddressNext | null = null;
     for (const segment of segments) {
       if (segment.startsWith('WARD:')) {
         wardId = segment.slice(5) || null;
       } else if (segment.startsWith('AREA:')) {
         areaId = segment.slice(5) || null;
+      } else if (segment.startsWith('NEXT:')) {
+        next = this.parseAddressContext(segment.slice(5)).next;
       } else if (segment) {
         orderId = segment;
       }
     }
-    return { wardId, orderId, areaId };
+    return { wardId, orderId, areaId, next };
   }
 
   private async sendAddressFlowForm(
     phone: string,
     wardId: string | null,
-    orderId?: string,
+    ctx?: string,
     areaId?: string | null,
   ) {
     const payload = {
@@ -1968,7 +2217,7 @@ export class WhatsappService {
             flow_message_version: '3',
             flow_id: '902959149367544',
             flow_cta: this.messages.get('address.flowButton'),
-            flow_token: this.buildAddressFlowToken(wardId, orderId, areaId),
+            flow_token: this.buildAddressFlowToken(wardId, ctx, areaId),
           },
         },
       },
@@ -1986,23 +2235,24 @@ export class WhatsappService {
   private async sendAreaListOrForm(
     phone: string,
     wardId: string,
-    orderId?: string,
+    ctx?: string,
   ) {
-    const areas = await this.areasForCheckout(wardId, orderId);
+    const areas = await this.areasForCheckout(wardId, ctx);
     if (areas.length === 0) {
-      return this.sendAddressFlowForm(phone, wardId, orderId);
+      return this.sendAddressFlowForm(phone, wardId, ctx);
     }
-    return this.sendAreaList(phone, wardId, 0, orderId);
+    return this.sendAreaList(phone, wardId, 0, ctx);
   }
 
   /**
-   * Active areas of a ward a customer may pick. At checkout (`orderId`) an
-   * order that already has its outlet (chosen before browsing) only offers that
-   * outlet's areas, so the delivering agent always belongs to the outlet whose
-   * stock was used.
+   * Active areas of a ward a customer may pick. For an existing order (`ctx`
+   * is its id) that already has its outlet only that outlet's areas are
+   * offered, so the delivering agent always belongs to the outlet whose stock
+   * was used. A new address before shopping isn't tied to an outlet yet.
    */
-  private async areasForCheckout(wardId: string, orderId?: string) {
+  private async areasForCheckout(wardId: string, ctx?: string) {
     const areas = await this.areaService.findActiveByWard(wardId);
+    const { orderId } = this.parseAddressContext(ctx);
     if (!orderId) return areas;
     const outlet = await this.orderService.getOrderOutlet(orderId);
     return outlet ? areas.filter((a) => a.outletId === outlet.id) : areas;
@@ -2024,25 +2274,27 @@ export class WhatsappService {
   /**
    * Sends an interactive list of active areas for a ward. In 'new' mode the
    * picked area is carried into the address Flow form via the reply id
-   * (`pickArea~<areaId>~<wardId>[~<orderId>]`), mirroring `sendWardList`. In
-   * 'repick' mode (checkout only) it replaces a removed area on the saved
-   * address instead (`fixArea~<areaId>~<orderId>`) — no address re-entry.
+   * (`pickArea~<areaId>~<wardId>[~<ctx>]`), mirroring `sendWardList`. In
+   * 'repick' mode (checkout only, `ctx` is the order id) it replaces a removed
+   * area on the saved address instead (`fixArea~<areaId>~<orderId>`) — no
+   * address re-entry.
    */
   async sendAreaList(
     phone: string,
     wardId: string,
     page = 0,
-    orderId?: string,
+    ctx?: string,
     mode: 'new' | 'repick' = 'new',
   ) {
-    const areas = await this.areasForCheckout(wardId, orderId);
+    const orderId = ctx;
+    const areas = await this.areasForCheckout(wardId, ctx);
 
     if (areas.length === 0) {
       // Re-pick with nothing left to pick: the confirm flow's area check
       // passes on an empty list and carries on to payment.
       return mode === 'repick' && orderId
         ? this.handleConfirmAddress(phone, orderId)
-        : this.sendAddressFlowForm(phone, wardId, orderId);
+        : this.sendAddressFlowForm(phone, wardId, ctx);
     }
 
     const LIST_MAX = 10;
@@ -2056,12 +2308,12 @@ export class WhatsappService {
       const start = page * PAGE_SIZE;
       pageAreas = areas.slice(start, start + PAGE_SIZE);
       if (pageAreas.length === 0) {
-        return this.sendAreaList(phone, wardId, 0, orderId, mode); // out-of-range page, restart
+        return this.sendAreaList(phone, wardId, 0, ctx, mode); // out-of-range page, restart
       }
       moreRow = start + PAGE_SIZE < areas.length;
     }
 
-    const suffix = orderId ? `~${orderId}` : '';
+    const suffix = ctx ? `~${ctx}` : '';
     const repick = mode === 'repick';
     const rows: any[] = pageAreas.map((a) => ({
       id: repick
@@ -2250,7 +2502,7 @@ export class WhatsappService {
   async receiveAddress(phone: string, addressJsonString: string) {
     try {
       const addressData = JSON.parse(addressJsonString);
-      const { wardId, orderId, areaId } = this.parseAddressFlowToken(
+      const { wardId, orderId, areaId, next } = this.parseAddressFlowToken(
         addressData.flow_token,
       );
 
@@ -2277,8 +2529,9 @@ export class WhatsappService {
         (typeof addressData.phone === 'string' && addressData.phone.trim()) ||
         phone;
 
+      let savedAddress: UserAddress | null = null;
       if (user) {
-        await this.userAddressRepository.save(
+        savedAddress = await this.userAddressRepository.save(
           this.userAddressRepository.create({
             userId: user.id,
             name: customerName,
@@ -2292,10 +2545,29 @@ export class WhatsappService {
         );
       }
 
-      // Only the checkout path carries an order id — advance it to payment.
-      // Onboarding (no order) just saves the address, then drops the customer
+      // An old checkout button carries an order id — advance it to payment.
+      // An address entered from shopping, the cart or Settings becomes the
+      // cart's confirmed address and returns the customer to that step.
+      // Onboarding (neither) just saves the address, then drops the customer
       // into the main menu — the same reply arbitrary text gets — since
       // there's nothing else queued for them to do next.
+      if (!orderId && next && user && savedAddress) {
+        await this.cartService.setConfirmedAddress(phone, savedAddress.id);
+        if (next === 'shop') return this.afterNewShoppingAddress(phone);
+        if (next === 'cart') {
+          const pruned = await this.pruneCartForCurrentOutlet(phone);
+          if (pruned === 'prompted') return;
+          return this.sendCartSummary(phone);
+        }
+        await this.sendText(
+          phone,
+          this.messages.get('settings.addressUpdated'),
+        );
+        const pruned = await this.pruneCartForCurrentOutlet(phone);
+        if (pruned === 'prompted') return;
+        return this.sendMainMenu(user.name, phone);
+      }
+
       if (orderId) {
         addressData.flow_token = orderId;
         // Preserve the ward/area parsed from the flow token so the order can

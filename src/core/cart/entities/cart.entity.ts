@@ -23,6 +23,13 @@ export class Cart {
   @Column({ type: 'varchar', nullable: true, default: null })
   outletId: string | null;
 
+  // The UserAddress the customer confirmed (or entered) before browsing for
+  // this cart. Products are only shown for that address's ward and outlet, so
+  // checkout uses it directly. Reset when the cart becomes an order, so the
+  // next shopping asks for the address again.
+  @Column({ type: 'varchar', nullable: true, default: null })
+  addressId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
