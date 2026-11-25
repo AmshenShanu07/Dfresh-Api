@@ -13,6 +13,7 @@ import { OutletService } from './outlet.service';
 import { CreateOutletDto } from './dto/create-outlet.dto';
 import { UpdateOutletDto } from './dto/update-outlet.dto';
 import { OutletFilterDto } from './dto/filter-list.dto';
+import { OutletOptionsDto } from './dto/outlet-options.dto';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { UserAuthGuard } from 'src/guards/user.guard';
 
@@ -32,6 +33,13 @@ export class OutletController {
   @Get('all')
   findAll() {
     return this.outletService.findAll();
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(UserAuthGuard)
+  @Get('options')
+  getOptions(@Query() filter: OutletOptionsDto) {
+    return this.outletService.findOptions(filter);
   }
 
   @ApiBearerAuth()

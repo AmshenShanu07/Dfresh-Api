@@ -3,6 +3,11 @@ import * as bcrypt from 'bcrypt';
 import { CreateOutletDto } from './dto/create-outlet.dto';
 import { UpdateOutletDto } from './dto/update-outlet.dto';
 import { OutletFilterDto } from './dto/filter-list.dto';
+import {
+  OutletOptionsDto,
+  OutletOptionsSortBy,
+  OutletOptionsSortOrder,
+} from './dto/outlet-options.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, FindOptionsWhere, In, Repository } from 'typeorm';
 import { Outlets } from './entities/outlet.entity';
@@ -105,6 +110,34 @@ export class OutletService {
     return this.outletRepository.find({
       where: { isDeleted: false },
       relations: { OutletAgent: { user: true } },
+    });
+  }
+
+  /**
+   * Flat outlet list for dropdowns: never deleted outlets, optionally only
+   * one status, newest first unless told otherwise. No agent relations.
+   */
+  findOptions(filter: OutletOptionsDto) {
+    const where: FindOptionsWhere<Outlets> = { isDeleted: false };
+    // `!== undefined`, not truthiness — `false` is a real filter value.
+    if (filter.isActive !== undefined) {
+      where.isActive = filter.isActive;
+    }
+    const sortBy = filter.sortBy ?? OutletOptionsSortBy.createdAt;
+    const sortOrder = filter.sortOrder ?? OutletOptionsSortOrder.DESC;
+
+    return this.outletRepository.find({
+      where,
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        isSalesEnabled: true,
+        wardId: true,
+        createdAt: true,
+      },
+      // id breaks ties so equal names/timestamps keep a stable order.
+      order: { [sortBy]: sortOrder, id: sortOrder },
     });
   }
 

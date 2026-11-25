@@ -30,13 +30,24 @@ export class PurchaseService {
 
   async create(createPurchaseDto: CreatePurchaseDto) {
     const [product, outlet, supplier] = await Promise.all([
-      this.productRepository.findOne({ where: { id: createPurchaseDto.productId } }),
-      this.outletRepository.findOne({ where: { id: createPurchaseDto.outletId } }),
-      this.userRepository.findOne({ where: { id: createPurchaseDto.supplierId } }),
+      this.productRepository.findOne({
+        where: { id: createPurchaseDto.productId },
+      }),
+      // Stock can only be received into a live outlet.
+      this.outletRepository.findOne({
+        where: {
+          id: createPurchaseDto.outletId,
+          isDeleted: false,
+          isActive: true,
+        },
+      }),
+      this.userRepository.findOne({
+        where: { id: createPurchaseDto.supplierId },
+      }),
     ]);
 
     if (!product) throw new BadRequestException('Product not found');
-    if (!outlet) throw new BadRequestException('Outlet not found');
+    if (!outlet) throw new BadRequestException('Outlet not found or inactive');
     if (!supplier) throw new BadRequestException('Supplier not found');
 
     const purchase = await this.purchaseRepository.save(
@@ -103,8 +114,12 @@ export class PurchaseService {
       newProductId !== purchase.productId
         ? this.productRepository.findOne({ where: { id: newProductId } })
         : Promise.resolve(true),
+      // Moving a purchase needs a live target outlet; keeping the current
+      // one is fine even if it has since been deactivated.
       newOutletId !== purchase.outletId
-        ? this.outletRepository.findOne({ where: { id: newOutletId } })
+        ? this.outletRepository.findOne({
+            where: { id: newOutletId, isDeleted: false, isActive: true },
+          })
         : Promise.resolve(true),
       updatePurchaseDto.supplierId &&
       updatePurchaseDto.supplierId !== purchase.supplierId
@@ -115,7 +130,7 @@ export class PurchaseService {
     ]);
 
     if (!product) throw new BadRequestException('Product not found');
-    if (!outlet) throw new BadRequestException('Outlet not found');
+    if (!outlet) throw new BadRequestException('Outlet not found or inactive');
     if (!supplier) throw new BadRequestException('Supplier not found');
 
     await this.dataSource.transaction(async (manager) => {
